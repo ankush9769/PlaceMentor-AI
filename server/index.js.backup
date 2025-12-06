@@ -1,0 +1,656 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { MongoClient } from 'mongodb';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import OpenAI from 'openai';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// MongoDB connection
+let db;
+const mongoClient = new MongoClient(process.env.MONGODB_URI);
+
+async function connectDB() {
+  try {
+    await mongoClient.connect();
+    db = mongoClient.db('ai-interview-simulator');
+    console.log('✅ Connected to MongoDB');
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error);
+    process.exit(1);
+  }
+}
+
+// OpenAI client
+console.log('🔑 OpenAI API Key loaded:', process.env.OPENAI_API_KEY ? 'Yes (starts with: ' + process.env.OPENAI_API_KEY.substring(0, 10) + '...)' : 'NO - MISSING!');
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Auth middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+  }
+
+  try {
+    const user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Invalid token' });
+  }
+};
+
+// Routes
+
+// Sign Up
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Email, password, and name are required'
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Invalid email format'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    const usersCollection = db.collection('users');
+    const existingUser = await usersCollection.findOne({ email: email.toLowerCase() });
+
+    if (existingUser) {
+      return res.status(400).json({
+        error: 'USER_EXISTS',
+        message: 'User with this email already exists'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const result = await usersCollection.insertOne({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      name,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const token = jwt.sign(
+      { userId: result.insertedId.toString(), email: email.toLowerCase() },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      token,
+      user: {
+        id: result.insertedId.toString(),
+        email: email.toLowerCase(),
+        name
+      }
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to create account'
+    });
+  }
+});
+
+// Sign In
+app.post('/api/auth/signin', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Email and password are required'
+      });
+    }
+
+    const usersCollection = db.collection('users');
+    const user = await usersCollection.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid email or password'
+      });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, user.password);
+
+    if (!isValidPassword) {
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid email or password'
+      });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id.toString(), email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user._id.toString(),
+        email: user.email,
+        name: user.name
+      }
+    });
+  } catch (error) {
+    console.error('Signin error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to sign in'
+    });
+  }
+});
+
+// Generate Questions
+app.post('/api/generate-questions', async (req, res) => {
+  console.log('📥 Received request to /api/generate-questions');
+  console.log('Request body:', req.body);
+  try {
+    const { techStack, level } = req.body;
+
+    if (!techStack || !level) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Missing required fields: techStack and level'
+      });
+    }
+
+    // Check if mock mode is enabled
+    if (process.env.USE_MOCK_MODE === 'true') {
+      console.log('🎭 Mock mode enabled - returning sample questions');
+      const mockQuestions = [
+        { id: 1, text: `What are the key features of ${techStack} that make it suitable for modern development?` },
+        { id: 2, text: `Can you explain the difference between synchronous and asynchronous operations in ${techStack}?` },
+        { id: 3, text: `How would you handle error management in a ${techStack} application?` },
+        { id: 4, text: `What are some best practices for ${level} developers working with ${techStack}?` },
+        { id: 5, text: `Describe a challenging project you've worked on using ${techStack} and how you approached it.` }
+      ];
+      return res.json({ questions: mockQuestions });
+    }
+
+    const prompt = `Generate five spoken-ready interview questions on ${level} ${techStack} concepts. Focus on theory and concepts, not code. Make questions suitable for verbal answers. Return as JSON array with numbered questions in this exact format: {"questions": [{"id": 1, "text": "question text"}, {"id": 2, "text": "question text"}, ...]}`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert technical interviewer. Generate interview questions that are clear, concise, and suitable for spoken delivery. Return only valid JSON.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7
+    });
+
+    let responseText = completion.choices[0]?.message?.content;
+    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(responseText);
+    const questions = parsed.questions || parsed;
+
+    res.json({ questions });
+  } catch (error) {
+    console.error('========================================');
+    console.error('Generate questions error:', error.message);
+    console.error('Error details:', error);
+    console.error('========================================');
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to generate questions',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Synthesize Speech
+app.post('/api/synthesize-speech', async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Missing required field: text'
+      });
+    }
+
+    const mp3 = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: 'alloy',
+      input: text,
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    console.error('Synthesize speech error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to synthesize speech'
+    });
+  }
+});
+
+// Evaluate Answer
+app.post('/api/evaluate-answer', async (req, res) => {
+  try {
+    const { question, answer, techStack, level } = req.body;
+
+    if (!question || !answer || !techStack || !level) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Missing required fields'
+      });
+    }
+
+    // Check if mock mode is enabled
+    if (process.env.USE_MOCK_MODE === 'true') {
+      console.log('🎭 Mock mode enabled - returning sample evaluation');
+      const mockEvaluation = {
+        scores: {
+          clarity: Math.floor(Math.random() * 2) + 3, // 3-4
+          accuracy: Math.floor(Math.random() * 2) + 3, // 3-4
+          depth: Math.floor(Math.random() * 2) + 3 // 3-4
+        },
+        feedback: {
+          clarity: "Your answer was well-structured and easy to follow. Consider adding more specific examples to enhance clarity.",
+          accuracy: "The technical concepts you mentioned are correct. You could improve by providing more detailed explanations.",
+          depth: "Good coverage of the topic. To demonstrate deeper understanding, try discussing edge cases or advanced scenarios."
+        },
+        overallTips: `Great job on your ${level} level ${techStack} answer! Focus on providing concrete examples and discussing real-world applications to strengthen your responses.`
+      };
+      return res.json(mockEvaluation);
+    }
+
+    const prompt = `Rate this interview answer on clarity (1-5), accuracy (1-5), and depth (1-5).
+
+Question: ${question}
+Answer: ${answer}
+Context: ${level} ${techStack} interview
+
+Provide specific feedback for each criterion and overall tips for improvement. Return as JSON in this exact format:
+{
+  "scores": {
+    "clarity": <number 1-5>,
+    "accuracy": <number 1-5>,
+    "depth": <number 1-5>
+  },
+  "feedback": {
+    "clarity": "<specific feedback>",
+    "accuracy": "<specific feedback>",
+    "depth": "<specific feedback>"
+  },
+  "overallTips": "<overall improvement suggestions>"
+}`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert technical interviewer providing constructive feedback. Be fair but thorough in your evaluation. Return only valid JSON.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.3
+    });
+
+    let responseText = completion.choices[0]?.message?.content;
+    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const evaluation = JSON.parse(responseText);
+
+    res.json(evaluation);
+  } catch (error) {
+    console.error('Evaluate answer error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to evaluate answer'
+    });
+  }
+});
+
+// Save Interview
+app.post('/api/interviews/save', authenticateToken, async (req, res) => {
+  try {
+    const { config, questions, answers, completedAt } = req.body;
+
+    if (!config || !questions || !answers) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Missing required fields'
+      });
+    }
+
+    const validAnswers = answers.filter(a => a.evaluation !== null);
+    const averageScores = validAnswers.reduce(
+      (acc, answer) => {
+        if (answer.evaluation) {
+          acc.clarity += answer.evaluation.scores.clarity;
+          acc.accuracy += answer.evaluation.scores.accuracy;
+          acc.depth += answer.evaluation.scores.depth;
+          acc.count += 1;
+        }
+        return acc;
+      },
+      { clarity: 0, accuracy: 0, depth: 0, count: 0 }
+    );
+
+    const avgClarity = averageScores.count > 0 ? averageScores.clarity / averageScores.count : 0;
+    const avgAccuracy = averageScores.count > 0 ? averageScores.accuracy / averageScores.count : 0;
+    const avgDepth = averageScores.count > 0 ? averageScores.depth / averageScores.count : 0;
+    const overallScore = (avgClarity + avgAccuracy + avgDepth) / 3;
+
+    const interviewsCollection = db.collection('interviews');
+
+    const result = await interviewsCollection.insertOne({
+      userId: req.user.userId,
+      config,
+      questions,
+      answers,
+      scores: {
+        clarity: avgClarity,
+        accuracy: avgAccuracy,
+        depth: avgDepth,
+        overall: overallScore
+      },
+      completedAt: completedAt || new Date(),
+      createdAt: new Date()
+    });
+
+    res.status(201).json({
+      interviewId: result.insertedId.toString(),
+      message: 'Interview saved successfully'
+    });
+  } catch (error) {
+    console.error('Save interview error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to save interview'
+    });
+  }
+});
+
+// Get Interview History
+app.get('/api/interviews/history', authenticateToken, async (req, res) => {
+  try {
+    const interviewsCollection = db.collection('interviews');
+
+    const interviews = await interviewsCollection
+      .find({ userId: req.user.userId })
+      .sort({ completedAt: -1 })
+      .limit(50)
+      .toArray();
+
+    const formattedInterviews = interviews.map(interview => ({
+      id: interview._id.toString(),
+      techStack: interview.config.techStack,
+      level: interview.config.level,
+      scores: interview.scores,
+      questionsCount: interview.questions.length,
+      answeredCount: interview.answers.filter(a => a.evaluation).length,
+      completedAt: interview.completedAt,
+      createdAt: interview.createdAt
+    }));
+
+    res.json({ interviews: formattedInterviews });
+  } catch (error) {
+    console.error('Get history error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to load interview history'
+    });
+  }
+});
+
+// Get Single Interview Details
+app.get('/api/interviews/:id', authenticateToken, async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const interviewsCollection = db.collection('interviews');
+    const interviewId = req.params.id;
+
+    const interview = await interviewsCollection.findOne({
+      _id: new ObjectId(interviewId),
+      userId: req.user.userId
+    });
+
+    if (!interview) {
+      return res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'Interview not found'
+      });
+    }
+
+    res.json({
+      interview: {
+        id: interview._id.toString(),
+        config: interview.config,
+        questions: interview.questions,
+        answers: interview.answers,
+        scores: interview.scores,
+        completedAt: interview.completedAt
+      }
+    });
+  } catch (error) {
+    console.error('Get interview details error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to load interview details'
+
+// Import and call the handler directly
+const handler = (await import('../api/aptitude-questions.js')).default;
+      await handler(req, res);
+    } catch (error) {
+      console.error('Aptitude questions error:', error);
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to generate aptitude questions',
+        details: error.message
+
+// Map our language IDs to Piston language IDs
+const languageMap = {
+          python: 'python',
+          javascript: 'javascript',
+          java: 'java',
+          cpp: 'c++',
+          c: 'c',
+          go: 'go',
+          rust: 'rust',
+          typescript: 'typescript',
+        };
+
+        // Get appropriate file name for each language
+        const fileNameMap = {
+          python: 'main.py',
+          javascript: 'main.js',
+          java: 'Main.java',
+          cpp: 'main.cpp',
+          c: 'main.c',
+          go: 'main.go',
+          rust: 'main.rs',
+          typescript: 'main.ts',
+        };
+
+        const pistonLanguage = languageMap[language] || language;
+        const fileName = fileNameMap[language] || 'main.txt';
+
+        // Use Piston API for code execution
+        const pistonResponse = await fetch('https://emkc.org/api/v2/piston/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            language: pistonLanguage,
+            version: '*',
+            files: [
+              {
+                name: fileName,
+                content: code,
+              },
+            ],
+          }),
+        });
+
+        if(!pistonResponse.ok) {
+        throw new Error('Failed to execute code');
+      }
+
+      const result = await pistonResponse.json();
+
+      // Combine stdout and stderr
+      let output = '';
+      if (result.run) {
+        if (result.run.stdout) {
+          output += result.run.stdout;
+        }
+        if (result.run.stderr) {
+          if (output) output += '\n';
+          output += result.run.stderr;
+        }
+      }
+      if (result.compile && result.compile.stderr) {
+        if (output) output += '\n';
+        output += 'Compilation Error:\n' + result.compile.stderr;
+      }
+
+      // Check if there was an error
+      if (result.run && result.run.code !== 0) {
+        return res.json({
+          output: output || 'Program exited with error',
+          error: result.run.stderr || 'Execution failed',
+        });
+      }
+
+      res.json({
+        output: output || 'Code executed successfully with no output.',
+      });
+    } catch (error) {
+      console.error('Code execution error:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to execute code',
+      });
+    }
+  });
+
+// Update User Profile
+app.put('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const { name, email, phone } = req.body;
+    const usersCollection = db.collection('users');
+
+    // Validate input
+    if (!name || !email) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Name and email are required'
+      });
+    }
+
+    // Check if email is already taken by another user
+    if (email !== req.user.email) {
+      const existingUser = await usersCollection.findOne({
+        email: email.toLowerCase(),
+        _id: { $ne: new ObjectId(req.user.userId) }
+      });
+
+      if (existingUser) {
+        return res.status(400).json({
+          error: 'EMAIL_EXISTS',
+          message: 'Email is already taken'
+        });
+      }
+    }
+
+    // Update user profile
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(req.user.userId) },
+      {
+        $set: {
+          name,
+          email: email.toLowerCase(),
+          phone: phone || '',
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: req.user.userId,
+        name,
+        email: email.toLowerCase(),
+        phone: phone || ''
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to update profile'
+    });
+  }
+});
+
+// Start server
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  });
+});

@@ -1,0 +1,40 @@
+.timer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64ffda;
+}
+
+.timer.warning {
+  color: #ffa500;
+}
+
+.timer.critical {
+  color: #ff6b6b;
+  animation: pulse 1s infinite;
+}
+
+.timer-ring {
+  transform: rotate(-90deg);
+}
+
+.timer-ring-circle {
+  transition: stroke-dashoffset 1s linear;
+}
+
+.timer-text {
+  position: absolute;
+  font-size: 1.2rem;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
