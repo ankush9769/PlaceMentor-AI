@@ -9,6 +9,47 @@ const openai = new OpenAI({
   },
 });
 
+// Fallback models for rate limiting
+const FALLBACK_MODELS = [
+  'google/gemini-2.0-flash-exp:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+  'microsoft/phi-3-mini-128k-instruct:free',
+  'huggingface/zephyr-7b-beta:free',
+  'openchat/openchat-7b:free'
+];
+
+async function tryModelsWithFallback(messages, options = {}) {
+  let lastError = null;
+  
+  for (const model of FALLBACK_MODELS) {
+    try {
+      console.log(`🤖 Trying model: ${model}`);
+      
+      const completion = await openai.chat.completions.create({
+        model,
+        messages,
+        ...options
+      });
+
+      const response = completion.choices[0]?.message?.content;
+      if (response) {
+        console.log(`✅ Success with model: ${model}`);
+        return response;
+      }
+    } catch (error) {
+      console.log(`❌ Model ${model} failed:`, error.message);
+      lastError = error;
+      
+      if (error.status !== 429) {
+        // If it's not a rate limit, continue to next model
+        continue;
+      }
+    }
+  }
+  
+  throw lastError || new Error('All models failed');
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({
@@ -57,23 +98,21 @@ Return ONLY a valid JSON object in this exact format (no other text):
   ]
 }`;
 
-    // Call OpenRouter API
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert technical interviewer. Generate interview questions that are clear, concise, and suitable for spoken delivery. Return only valid JSON, no markdown formatting.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
+    // Call OpenRouter API with fallback
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert technical interviewer. Generate interview questions that are clear, concise, and suitable for spoken delivery. Return only valid JSON, no markdown formatting.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
+
+    const responseText = await tryModelsWithFallback(messages, {
       temperature: 0.7
     });
-
-    let responseText = completion.choices[0]?.message?.content;
 
     if (!responseText) {
       throw new Error('No response from OpenAI');
@@ -95,14 +134,23 @@ Return ONLY a valid JSON object in this exact format (no other text):
     return res.status(200).json({ questions });
 
   } catch (error) {
-    console.error('Error generating questions:', error);
+    console.error('========================================');
+    console.error('💥 GENERATE QUESTIONS API ERROR:');
+    console.error('├─ Error Type:', error.constructor.name);
+    console.error('├─ Status Code:', error.status || 'N/A');
+    console.error('├─ Message:', error.message);
+    console.error('├─ Tech Stack:', techStack);
+    console.error('├─ Level:', level);
+    console.error('└─ Timestamp:', new Date().toISOString());
+    console.error('========================================');
 
-    // Handle specific OpenAI errors
+    // Handle specific errors with better messaging
     if (error.status === 429) {
       return res.status(429).json({
-        error: 'RATE_LIMIT',
-        message: 'Too many requests. Please wait a moment and try again.',
-        retryable: true
+        error: 'RATE_LIMIT_ALL_MODELS',
+        message: 'All AI models are currently busy. Please try again in 1-2 minutes.',
+        retryable: true,
+        retryAfter: 60
       });
     }
 
@@ -126,7 +174,8 @@ Return ONLY a valid JSON object in this exact format (no other text):
     return res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: 'Failed to generate questions. Please try again.',
-      retryable: true
+      retryable: true,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume Tracker - No Login Required</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        .btn:hover {
+            background: #5a6fd8;
+        }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin: 5px 0;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+        }
+        .history-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        .score {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .session-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📄 Resume Tracker</h1>
+        <p>Track your resume improvements - No login required!</p>
+        <div class="session-info">
+            <strong>Your Session ID:</strong> <span id="sessionId">Generating...</span><br>
+            <small>This ID tracks your resume analyses in this browser session</small>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📝 Analyze Resume</h2>
+        <input type="text" id="fileName" placeholder="Resume filename (e.g., resume_v1.pdf)" value="my_resume.pdf">
+        <input type="text" id="targetRole" placeholder="Target role (e.g., Senior Developer)" value="Software Engineer">
+        <textarea id="resumeText" placeholder="Paste your resume text here...">John Doe
+Software Engineer
+Email: john@example.com
+
+EXPERIENCE
+Software Developer at TechCorp (2020-2023)
+- Developed web applications using React and Node.js
+- Collaborated with cross-functional teams
+- Improved application performance by 30%
+
+EDUCATION
+BS Computer Science, University (2020)
+
+SKILLS
+JavaScript, React, Node.js, Python, Git</textarea>
+        <button class="btn" onclick="analyzeResume()">🔍 Analyze Resume</button>
+        <div id="analysisResult"></div>
+    </div>
+
+    <div class="section">
+        <h2>📊 Your Resume History</h2>
+        <button class="btn" onclick="loadHistory()">📈 Load History</button>
+        <button class="btn" onclick="compareLatest()" id="compareBtn" disabled>🔄 Compare Latest Two</button>
+        <div id="historyResult"></div>
+    </div>
+
+    <script>
+        // Generate or get session ID
+        let sessionId = localStorage.getItem('resumeSessionId');
+        if (!sessionId) {
+            sessionId = 'session_' + crypto.randomUUID();
+            localStorage.setItem('resumeSessionId', sessionId);
+        }
+        document.getElementById('sessionId').textContent = sessionId;
+
+        let analyses = [];
+
+        async function analyzeResume() {
+            const fileName = document.getElementById('fileName').value;
+            const targetRole = document.getElementById('targetRole').value;
+            const resumeText = document.getElementById('resumeText').value;
+
+            if (!resumeText.trim()) {
+                alert('Please enter resume text');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3001/api/resume/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId
+                    },
+                    body: JSON.stringify({
+                        resumeText,
+                        targetRole,
+                        fileName
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('analysisResult').innerHTML = `
+                        <div class="result">
+                            <h3>✅ Analysis Complete!</h3>
+                            <div class="score">Overall Score: ${data.overallScore}/10</div>
+                            <div class="score">ATS Score: ${data.atsScore}/10</div>
+                            <p><strong>Strengths:</strong> ${data.strengths?.join(', ') || 'N/A'}</p>
+                            <p><strong>Weaknesses:</strong> ${data.weaknesses?.join(', ') || 'N/A'}</p>
+                            <p><strong>Analysis ID:</strong> ${data.analysisId}</p>
+                            <p style="color: green;">${data.message}</p>
+                        </div>
+                    `;
+                    
+                    // Auto-load history after analysis
+                    setTimeout(loadHistory, 1000);
+                } else {
+                    document.getElementById('analysisResult').innerHTML = `
+                        <div class="result" style="border-left-color: #dc3545;">
+                            <h3>❌ Analysis Failed</h3>
+                            <p>${data.message}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('analysisResult').innerHTML = `
+                    <div class="result" style="border-left-color: #dc3545;">
+                        <h3>🚨 Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch('http://localhost:3001/api/resume/history', {
+                    headers: {
+                        'X-Session-ID': sessionId
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    analyses = data.analyses || [];
+                    
+                    if (analyses.length === 0) {
+                        document.getElementById('historyResult').innerHTML = `
+                            <div class="result">
+                                <p>No resume analyses found. Analyze a resume first!</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    let historyHtml = `<h3>📈 Found ${analyses.length} analyses:</h3>`;
+                    
+                    analyses.forEach((analysis, index) => {
+                        historyHtml += `
+                            <div class="history-item">
+                                <strong>${analysis.fileName}</strong> - ${analysis.targetRole}<br>
+                                <span class="score">Score: ${analysis.overallScore}/10</span> | 
+                                <span class="score">ATS: ${analysis.atsScore}/10</span><br>
+                                <small>📅 ${new Date(analysis.analyzedAt).toLocaleString()}</small>
+                            </div>
+                        `;
+                    });
+
+                    document.getElementById('historyResult').innerHTML = historyHtml;
+                    
+                    // Enable compare button if we have 2+ analyses
+                    document.getElementById('compareBtn').disabled = analyses.length < 2;
+                } else {
+                    document.getElementById('historyResult').innerHTML = `
+                        <div class="result" style="border-left-color: #dc3545;">
+                            <h3>❌ Failed to load history</h3>
+                            <p>${data.message}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('historyResult').innerHTML = `
+                    <div class="result" style="border-left-color: #dc3545;">
+                        <h3>🚨 Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function compareLatest() {
+            if (analyses.length < 2) {
+                alert('Need at least 2 analyses to compare');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3001/api/resume/compare', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId
+                    },
+                    body: JSON.stringify({
+                        analysisId1: analyses[1].id, // Older
+                        analysisId2: analyses[0].id  // Newer
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    const improvement = data.improvements.overallScore;
+                    const atsImprovement = data.improvements.atsScore;
+                    
+                    document.getElementById('historyResult').innerHTML += `
+                        <div class="result" style="border-left-color: #28a745;">
+                            <h3>🔄 Comparison Results</h3>
+                            <p><strong>Overall Score Change:</strong> ${improvement > 0 ? '+' : ''}${improvement.toFixed(1)}</p>
+                            <p><strong>ATS Score Change:</strong> ${atsImprovement > 0 ? '+' : ''}${atsImprovement.toFixed(1)}</p>
+                            <p><strong>Recommendations:</strong></p>
+                            <ul>
+                                ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    alert('Comparison failed: ' + data.message);
+                }
+            } catch (error) {
+                alert('Comparison error: ' + error.message);
+            }
+        }
+
+        // Load history on page load
+        window.onload = loadHistory;
+    </script>
+</body>
+</html>

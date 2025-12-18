@@ -30,9 +30,25 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
   // Play audio when question changes
   useEffect(() => {
     if (questions.length > 0 && currentQuestionIndex < questions.length) {
-      playQuestionAudio(questions[currentQuestionIndex].text);
+      // Small delay to ensure the question is displayed first
+      setTimeout(() => {
+        playQuestionAudio(questions[currentQuestionIndex].text);
+      }, 500);
     }
   }, [currentQuestionIndex, questions]);
+
+  // Load voices for browser TTS
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      // Load voices
+      const loadVoices = () => {
+        window.speechSynthesis.getVoices();
+      };
+      
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
 
   const fetchQuestions = async () => {
     try {
@@ -72,6 +88,19 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
         throw new Error('Failed to synthesize speech');
       }
 
+      const contentType = response.headers.get('content-type');
+      
+      // Check if response is JSON (browser TTS mode) or audio blob (OpenAI TTS)
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data.useBrowserTTS) {
+          console.log('🎭 Using browser-based text-to-speech');
+          playBrowserTTS(text);
+          return;
+        }
+      }
+
+      // OpenAI TTS mode - handle as audio blob
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
 
@@ -81,6 +110,55 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
       }
     } catch (err) {
       console.error('Audio playback error:', err);
+      // Fallback to browser TTS on any error
+      playBrowserTTS(text);
+    }
+  };
+
+  const playBrowserTTS = (text) => {
+    try {
+      // Check if browser supports speech synthesis
+      if ('speechSynthesis' in window) {
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Configure voice settings
+        utterance.rate = 0.9; // Slightly slower for clarity
+        utterance.pitch = 1.0;
+        utterance.volume = 0.8;
+        
+        // Try to use a natural-sounding voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(voice => 
+          voice.name.includes('Natural') || 
+          voice.name.includes('Enhanced') ||
+          voice.name.includes('Premium') ||
+          (voice.lang.startsWith('en') && voice.localService)
+        );
+        
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
+        }
+        
+        utterance.onend = () => {
+          setIsPlayingAudio(false);
+        };
+        
+        utterance.onerror = (event) => {
+          console.error('Browser TTS error:', event.error);
+          setIsPlayingAudio(false);
+        };
+        
+        window.speechSynthesis.speak(utterance);
+        console.log('🔊 Playing question audio using browser TTS');
+      } else {
+        console.warn('Browser does not support speech synthesis');
+        setIsPlayingAudio(false);
+      }
+    } catch (err) {
+      console.error('Browser TTS error:', err);
       setIsPlayingAudio(false);
     }
   };
@@ -282,6 +360,8 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
           question={questions[currentQuestionIndex]}
           currentIndex={currentQuestionIndex}
           totalQuestions={questions.length}
+          onReplayAudio={playQuestionAudio}
+          isPlayingAudio={isPlayingAudio}
         />
 
         <div className="transcript-area">

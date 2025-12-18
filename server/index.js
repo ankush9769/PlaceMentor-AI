@@ -8,6 +8,8 @@ import OpenAI from 'openai';
 import multer from 'multer';
 import { createRequire } from 'module';
 import mammoth from 'mammoth';
+import { ModelFallback } from './modelFallback.js';
+import crypto from 'crypto';
 
 // Create require function for CommonJS modules
 const require = createRequire(import.meta.url);
@@ -20,6 +22,22 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Simple test route
+app.get('/api/test', (req, res) => {
+  console.log('📥 Test route called');
+  res.json({ message: 'Server is working', timestamp: new Date() });
+});
+
+// Test resume route (no auth)
+app.post('/api/test-resume', (req, res) => {
+  console.log('📥 Test resume route called');
+  res.json({ 
+    message: 'Resume test route working', 
+    body: req.body,
+    noAuth: true 
+  });
+});
 
 // MongoDB connection
 let db;
@@ -47,6 +65,54 @@ const openai = new OpenAI({
   },
 });
 
+// Initialize model fallback system
+const modelFallback = new ModelFallback(openai);
+
+// Helper function to safely get current model
+const getCurrentModel = () => {
+  if (process.env.USE_MOCK_MODE === 'true') {
+    return 'Mock Mode';
+  }
+  return modelFallback ? modelFallback.getCurrentModel() : 'Unknown';
+};
+
+// Helper function to safely get model status
+const getModelStatus = () => {
+  if (process.env.USE_MOCK_MODE === 'true') {
+    return {
+      availableModels: 1,
+      totalModels: 1,
+      nextResetMinutes: 0,
+      lastSuccessfulModel: 'Mock Mode'
+    };
+  }
+  return modelFallback ? modelFallback.getStatusSummary() : null;
+};
+
+// Helper function to get or generate session ID for tracking resume analyses
+const getSessionId = (req) => {
+  // First check if user is authenticated
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (token) {
+    try {
+      const user = jwt.verify(token, process.env.JWT_SECRET);
+      return `user_${user.userId}`; // Use user ID for authenticated users
+    } catch (error) {
+      // Invalid token, fall through to session ID
+    }
+  }
+  
+  // Check for session ID in headers or generate new one
+  let sessionId = req.headers['x-session-id'];
+  if (!sessionId) {
+    sessionId = `session_${crypto.randomUUID()}`;
+  }
+  
+  return sessionId;
+};
+
 // Auth middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -63,6 +129,30 @@ const authenticateToken = (req, res, next) => {
   } catch (error) {
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Invalid token' });
   }
+};
+
+// Optional auth middleware - doesn't fail if no token provided
+const optionalAuth = (req, res, next) => {
+  console.log('🔍 OptionalAuth middleware called for:', req.path);
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  console.log('🔍 Auth header:', authHeader ? 'Present' : 'Not present');
+
+  if (token) {
+    try {
+      const user = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = user;
+      console.log('✅ Token valid, user authenticated');
+    } catch (error) {
+      // Invalid token, but we don't fail - just continue without user
+      console.log('❌ Invalid token provided, continuing without authentication');
+    }
+  } else {
+    console.log('ℹ️ No token provided, continuing without authentication');
+  }
+  
+  next();
 };
 
 // Routes
@@ -195,6 +285,9 @@ app.post('/api/auth/signin', async (req, res) => {
 app.post('/api/generate-questions', async (req, res) => {
   console.log('📥 Received request to /api/generate-questions');
   console.log('Request body:', req.body);
+  console.log('🔍 DEBUG: USE_MOCK_MODE =', process.env.USE_MOCK_MODE);
+  console.log('🔍 DEBUG: Mock mode check =', process.env.USE_MOCK_MODE === 'true');
+  
   try {
     const { techStack, level } = req.body;
 
@@ -229,25 +322,24 @@ app.post('/api/generate-questions', async (req, res) => {
   ]
 }`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
-      messages: [
-        {
-          role: 'user',
-          content: 'You are an expert technical interviewer. Return ONLY valid JSON with no markdown formatting or code blocks. The JSON must have a "questions" array at the top level.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert technical interviewer. Return ONLY valid JSON with no markdown formatting or code blocks. The JSON must have a "questions" array at the top level.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
+
+    const responseText = await modelFallback.makeRequest(messages, {
       temperature: 0.7
     });
 
-    let responseText = completion.choices[0]?.message?.content;
     console.log('🔍 Raw AI response:', responseText);
-    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(responseText);
+    const cleanedResponse = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(cleanedResponse);
     console.log('🔍 Parsed data:', JSON.stringify(parsed, null, 2));
 
     // Handle different response formats from AI and flatten nested structures
@@ -276,12 +368,29 @@ app.post('/api/generate-questions', async (req, res) => {
     res.json({ questions });
   } catch (error) {
     console.error('========================================');
-    console.error('Generate questions error:', error.message);
-    console.error('Error details:', error);
+    console.error('💥 GENERATE QUESTIONS ERROR:');
+    console.error('├─ Error Type:', error.constructor.name);
+    console.error('├─ Status Code:', error.status || 'N/A');
+    console.error('├─ Message:', error.message);
+    console.error('├─ Current Model:', getCurrentModel());
+    console.error('├─ Tech Stack:', req.body.techStack);
+    console.error('├─ Level:', req.body.level);
+    console.error('└─ Timestamp:', new Date().toISOString());
     console.error('========================================');
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'RATE_LIMIT_ALL_MODELS',
+        message: 'All AI models are currently busy. Please try again in 1-2 minutes.',
+        retryable: true,
+        retryAfter: 60
+      });
+    }
+
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: 'Failed to generate questions',
+      retryable: true,
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -299,6 +408,16 @@ app.post('/api/synthesize-speech', async (req, res) => {
       });
     }
 
+    // Check if mock mode is enabled - use browser-based TTS instead
+    if (process.env.USE_MOCK_MODE === 'true') {
+      console.log('🎭 Mock mode enabled - instructing client to use browser TTS');
+      return res.json({
+        useBrowserTTS: true,
+        text: text,
+        message: 'Use browser-based text-to-speech'
+      });
+    }
+
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
       voice: 'alloy',
@@ -311,10 +430,19 @@ app.post('/api/synthesize-speech', async (req, res) => {
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
   } catch (error) {
-    console.error('Synthesize speech error:', error);
-    res.status(500).json({
-      error: 'INTERNAL_ERROR',
-      message: 'Failed to synthesize speech'
+    console.error('========================================');
+    console.error('💥 SYNTHESIZE SPEECH ERROR:');
+    console.error('├─ Error Type:', error.constructor.name);
+    console.error('├─ Message:', error.message);
+    console.error('├─ Text length:', req.body.text?.length || 0);
+    console.error('└─ Timestamp:', new Date().toISOString());
+    console.error('========================================');
+    
+    // Fallback to browser TTS on error
+    res.json({
+      useBrowserTTS: true,
+      text: req.body.text,
+      message: 'Falling back to browser-based text-to-speech due to API error'
     });
   }
 });
@@ -371,31 +499,48 @@ Provide specific feedback for each criterion and overall tips for improvement. R
   "overallTips": "<overall improvement suggestions>"
 }`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
-      messages: [
-        {
-          role: 'user',
-          content: 'You are an expert technical interviewer providing constructive feedback. Be fair but thorough in your evaluation. Return only valid JSON.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert technical interviewer providing constructive feedback. Be fair but thorough in your evaluation. Return only valid JSON.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
+
+    const responseText = await modelFallback.makeRequest(messages, {
       temperature: 0.3
     });
 
-    let responseText = completion.choices[0]?.message?.content;
-    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const evaluation = JSON.parse(responseText);
+    const cleanedResponse = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const evaluation = JSON.parse(cleanedResponse);
 
     res.json(evaluation);
   } catch (error) {
-    console.error('Evaluate answer error:', error);
+    console.error('========================================');
+    console.error('💥 EVALUATE ANSWER ERROR:');
+    console.error('├─ Error Type:', error.constructor.name);
+    console.error('├─ Status Code:', error.status || 'N/A');
+    console.error('├─ Message:', error.message);
+    console.error('├─ Current Model:', getCurrentModel());
+    console.error('└─ Timestamp:', new Date().toISOString());
+    console.error('========================================');
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'RATE_LIMIT_ALL_MODELS',
+        message: 'All AI models are currently busy. Please try again in 1-2 minutes.',
+        retryable: true,
+        retryAfter: 60
+      });
+    }
+
     res.status(500).json({
       error: 'INTERNAL_ERROR',
-      message: 'Failed to evaluate answer'
+      message: 'Failed to evaluate answer',
+      retryable: true
     });
   }
 });
@@ -716,20 +861,56 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// Model Status API
+app.get('/api/models/status', (req, res) => {
+  try {
+    const status = getModelStatus();
+    if (process.env.USE_MOCK_MODE !== 'true' && modelFallback) {
+      modelFallback.logRateLimitStatus();
+    }
+    
+    res.json({
+      status: 'success',
+      models: {
+        available: status.availableModels,
+        total: status.totalModels,
+        lastSuccessful: status.lastSuccessfulModel
+      },
+      nextReset: {
+        time: status.nextResetTime,
+        minutes: status.nextResetMinutes
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Model status error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to get model status'
+    });
+  }
+});
+
 // Chat API for Chatbot
 console.log('✅ Registering /api/chat route');
 app.post('/api/chat', async (req, res) => {
+  console.log('📥 Chat request received');
+  console.log('🔍 Mock mode check:', process.env.USE_MOCK_MODE === 'true');
+  
   try {
     const { message, conversationHistory = [] } = req.body;
 
     if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+      return res.status(400).json({ 
+        error: 'VALIDATION_ERROR',
+        message: 'Message is required' 
+      });
     }
 
     // Build conversation context
     const messages = [
       {
-        role: 'user',
+        role: 'system',
         content: `You are an AI interview preparation assistant. Help users with:
 - Technical interview preparation strategies
 - Explaining programming concepts and algorithms
@@ -747,25 +928,66 @@ Be helpful, concise, and encouraging. Format your responses clearly with bullet 
       }
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
-      messages,
+    // Check if mock mode is enabled for chat
+    if (process.env.USE_MOCK_MODE === 'true') {
+      console.log('🎭 Mock mode enabled - returning sample chat response');
+      const mockReply = `Hello! I'm here to help you with interview preparation. You asked about "${message}". Here are some key points:
+
+• This is a mock response for testing purposes
+• In real mode, I would provide detailed technical explanations
+• I can help with JavaScript, React, algorithms, and more
+• Feel free to ask specific interview questions!
+
+Is there a particular topic you'd like to focus on for your interview preparation?`;
+      return res.json({ reply: mockReply });
+    }
+
+    // Use model fallback system
+    const reply = await modelFallback.makeRequest(messages, {
       temperature: 0.7,
       max_tokens: 500
     });
 
-    const reply = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-
     res.json({ reply });
   } catch (error) {
     console.error('========================================');
-    console.error('Chat error:', error.message);
-    console.error('Error details:', error);
-    console.error('Error stack:', error.stack);
+    console.error('💥 CHAT ERROR DETAILS:');
+    console.error('├─ Error Type:', error.constructor.name);
+    console.error('├─ Status Code:', error.status || 'N/A');
+    console.error('├─ Message:', error.message);
+    console.error('├─ Current Model:', getCurrentModel());
+    console.error('├─ Timestamp:', new Date().toISOString());
+    
+    if (error.status === 429) {
+      console.error('├─ Rate Limit Info:', error.error?.metadata?.raw || 'No additional info');
+      console.error('└─ Suggestion: All free models may be rate limited. Try again in 1-2 minutes.');
+    } else {
+      console.error('└─ Stack:', error.stack);
+    }
     console.error('========================================');
+
+    // Enhanced error response with detailed status
+    if (error.status === 429) {
+      const status = getModelStatus();
+      const retryMinutes = status.nextResetMinutes || 2;
+      
+      return res.status(429).json({
+        error: 'RATE_LIMIT_ALL_MODELS',
+        message: `All AI models are currently busy. Next model available in ${retryMinutes} minute(s).`,
+        retryable: true,
+        retryAfter: retryMinutes * 60,
+        modelStatus: {
+          available: status.availableModels,
+          total: status.totalModels,
+          nextResetMinutes: retryMinutes
+        }
+      });
+    }
+
     res.status(500).json({
       error: 'INTERNAL_ERROR',
-      message: 'Failed to process chat message',
+      message: 'Failed to process chat message. Please try again.',
+      retryable: true,
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -883,10 +1105,12 @@ JavaScript, React, Node.js, Python, SQL, Git, AWS`;
   }
 });
 
-// Resume Analysis Endpoint
+// Resume Analysis Endpoint (No authentication required)
 app.post('/api/resume/analyze', async (req, res) => {
+  console.log('📥 Resume analyze endpoint called');
+  console.log('📋 Request body:', req.body);
   try {
-    const { resumeText, targetRole } = req.body;
+    const { resumeText, targetRole, fileName } = req.body;
 
     if (!resumeText) {
       return res.status(400).json({
@@ -929,7 +1153,33 @@ app.post('/api/resume/analyze', async (req, res) => {
           skills: "needs_improvement"
         }
       };
-      return res.json(mockAnalysis);
+      // Save mock analysis to database
+      const sessionId = getSessionId(req);
+      const analysisId = 'mock_' + Date.now();
+      
+      try {
+        const resumeAnalysisCollection = db.collection('resumeAnalysis');
+        await resumeAnalysisCollection.insertOne({
+          sessionId: sessionId,
+          fileName: fileName || 'uploaded-resume',
+          targetRole: targetRole || 'Not specified',
+          resumeText: resumeText,
+          analysis: mockAnalysis,
+          analyzedAt: new Date(),
+          createdAt: new Date()
+        });
+        console.log('✅ Mock resume analysis saved to database for session:', sessionId);
+      } catch (saveError) {
+        console.error('⚠️ Failed to save mock analysis to database:', saveError.message);
+        // Continue anyway - don't fail the request if save fails
+      }
+
+      return res.json({
+        ...mockAnalysis,
+        analysisId: analysisId,
+        saved: true,
+        message: 'Mock analysis completed - no authentication required'
+      });
     }
 
     const prompt = `Analyze this resume and provide detailed, actionable feedback in JSON format.
@@ -983,7 +1233,33 @@ Focus your analysis on:
     responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const analysis = JSON.parse(responseText);
 
-    res.json(analysis);
+    // Save analysis to database
+    const sessionId = getSessionId(req);
+    const analysisId = 'real_' + Date.now();
+    
+    try {
+      const resumeAnalysisCollection = db.collection('resumeAnalysis');
+      await resumeAnalysisCollection.insertOne({
+        sessionId: sessionId,
+        fileName: fileName || 'uploaded-resume',
+        targetRole: targetRole || 'Not specified',
+        resumeText: resumeText,
+        analysis: analysis,
+        analyzedAt: new Date(),
+        createdAt: new Date()
+      });
+      console.log('✅ Resume analysis saved to database for session:', sessionId);
+    } catch (saveError) {
+      console.error('⚠️ Failed to save analysis to database:', saveError.message);
+      // Continue anyway - don't fail the request if save fails
+    }
+
+    res.json({
+      ...analysis,
+      analysisId: analysisId,
+      saved: true,
+      message: 'Real analysis completed - no authentication required'
+    });
   } catch (error) {
     console.error('========================================');
     console.error('Resume analysis error:', error.message);
@@ -993,6 +1269,201 @@ Focus your analysis on:
       error: 'INTERNAL_ERROR',
       message: 'Failed to analyze resume',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Get Resume Analysis History (No authentication required)
+app.get('/api/resume/history', async (req, res) => {
+  try {
+    const sessionId = getSessionId(req);
+    console.log('📥 Getting history for session:', sessionId);
+    
+    const resumeAnalysisCollection = db.collection('resumeAnalysis');
+
+    const analyses = await resumeAnalysisCollection
+      .find({ sessionId: sessionId })
+      .sort({ analyzedAt: -1 })
+      .limit(50)
+      .toArray();
+
+    const formattedAnalyses = analyses.map(analysis => ({
+      id: analysis._id.toString(),
+      fileName: analysis.fileName,
+      targetRole: analysis.targetRole,
+      overallScore: analysis.analysis.overallScore,
+      atsScore: analysis.analysis.atsScore,
+      analyzedAt: analysis.analyzedAt,
+      createdAt: analysis.createdAt,
+      // Include summary of key metrics for quick overview
+      summary: {
+        strengthsCount: analysis.analysis.strengths?.length || 0,
+        weaknessesCount: analysis.analysis.weaknesses?.length || 0,
+        suggestionsCount: analysis.analysis.suggestions?.length || 0,
+        keywordCount: analysis.analysis.keywords?.length || 0
+      }
+    }));
+
+    res.json({ analyses: formattedAnalyses });
+  } catch (error) {
+    console.error('Get resume history error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to load resume analysis history'
+    });
+  }
+});
+
+// Get Single Resume Analysis Details (No authentication required)
+app.get('/api/resume/analysis/:id', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const sessionId = getSessionId(req);
+    const resumeAnalysisCollection = db.collection('resumeAnalysis');
+    const analysisId = req.params.id;
+
+    const analysis = await resumeAnalysisCollection.findOne({
+      _id: new ObjectId(analysisId),
+      sessionId: sessionId
+    });
+
+    if (!analysis) {
+      return res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'Resume analysis not found'
+      });
+    }
+
+    res.json({
+      id: analysis._id.toString(),
+      fileName: analysis.fileName,
+      targetRole: analysis.targetRole,
+      analysis: analysis.analysis,
+      resumeText: analysis.resumeText,
+      analyzedAt: analysis.analyzedAt,
+      createdAt: analysis.createdAt
+    });
+  } catch (error) {
+    console.error('Get resume analysis details error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to load resume analysis details'
+    });
+  }
+});
+
+// Compare Resume Analyses (show improvement over time - No authentication required)
+app.post('/api/resume/compare', async (req, res) => {
+  try {
+    const { analysisId1, analysisId2 } = req.body;
+    
+    if (!analysisId1 || !analysisId2) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Two analysis IDs are required for comparison'
+      });
+    }
+
+    const { ObjectId } = await import('mongodb');
+    const sessionId = getSessionId(req);
+    const resumeAnalysisCollection = db.collection('resumeAnalysis');
+
+    const [analysis1, analysis2] = await Promise.all([
+      resumeAnalysisCollection.findOne({
+        _id: new ObjectId(analysisId1),
+        sessionId: sessionId
+      }),
+      resumeAnalysisCollection.findOne({
+        _id: new ObjectId(analysisId2),
+        sessionId: sessionId
+      })
+    ]);
+
+    if (!analysis1 || !analysis2) {
+      return res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'One or both resume analyses not found'
+      });
+    }
+
+    // Calculate improvements
+    const comparison = {
+      older: {
+        id: analysis1._id.toString(),
+        fileName: analysis1.fileName,
+        analyzedAt: analysis1.analyzedAt,
+        scores: {
+          overall: analysis1.analysis.overallScore,
+          ats: analysis1.analysis.atsScore
+        }
+      },
+      newer: {
+        id: analysis2._id.toString(),
+        fileName: analysis2.fileName,
+        analyzedAt: analysis2.analyzedAt,
+        scores: {
+          overall: analysis2.analysis.overallScore,
+          ats: analysis2.analysis.atsScore
+        }
+      },
+      improvements: {
+        overallScore: analysis2.analysis.overallScore - analysis1.analysis.overallScore,
+        atsScore: analysis2.analysis.atsScore - analysis1.analysis.atsScore,
+        strengthsAdded: analysis2.analysis.strengths?.length - analysis1.analysis.strengths?.length || 0,
+        weaknessesReduced: analysis1.analysis.weaknesses?.length - analysis2.analysis.weaknesses?.length || 0
+      },
+      recommendations: []
+    };
+
+    // Add improvement recommendations
+    if (comparison.improvements.overallScore > 0) {
+      comparison.recommendations.push("Great job! Your overall resume score has improved.");
+    } else if (comparison.improvements.overallScore < 0) {
+      comparison.recommendations.push("Consider reviewing recent changes - your overall score has decreased.");
+    }
+
+    if (comparison.improvements.atsScore > 0) {
+      comparison.recommendations.push("Excellent! Your ATS compatibility has improved.");
+    }
+
+    res.json(comparison);
+  } catch (error) {
+    console.error('Resume comparison error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to compare resume analyses'
+    });
+  }
+});
+
+// Delete Resume Analysis (No authentication required)
+app.delete('/api/resume/analysis/:id', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const sessionId = getSessionId(req);
+    const resumeAnalysisCollection = db.collection('resumeAnalysis');
+    const analysisId = req.params.id;
+
+    const result = await resumeAnalysisCollection.deleteOne({
+      _id: new ObjectId(analysisId),
+      sessionId: sessionId
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'Resume analysis not found'
+      });
+    }
+
+    res.json({
+      message: 'Resume analysis deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete resume analysis error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to delete resume analysis'
     });
   }
 });

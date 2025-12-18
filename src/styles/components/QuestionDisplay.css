@@ -30,6 +30,59 @@
   font-weight: 600;
 }
 
+.replay-audio-btn {
+  background: rgba(100, 255, 218, 0.1);
+  border: 2px solid #64ffda;
+  border-radius: 25px;
+  color: #64ffda;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 100px;
+  justify-content: center;
+}
+
+.replay-audio-btn:hover:not(:disabled) {
+  background: rgba(100, 255, 218, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(100, 255, 218, 0.3);
+}
+
+.replay-audio-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.replay-audio-btn.playing {
+  background: rgba(100, 255, 218, 0.2);
+  animation: pulse 1.5s infinite;
+}
+
+.audio-icon {
+  font-size: 1rem;
+}
+
+.audio-text {
+  font-size: 0.8rem;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(100, 255, 218, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(100, 255, 218, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(100, 255, 218, 0);
+  }
+}
+
 @media (max-width: 768px) {
   .question-display {
     padding: 20px;
@@ -37,5 +90,17 @@
 
   .question-text {
     font-size: 1.1rem;
+  }
+
+  .replay-audio-btn {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    min-width: 80px;
+  }
+
+  .question-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
   }
 }
