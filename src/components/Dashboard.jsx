@@ -140,19 +140,27 @@ const Dashboard = ({ user, onStartInterview, onLogout, onViewInterview }) => {
                 <div className="history-scores">
                   <div className="score-item">
                     <span className="score-label">Overall</span>
-                    <span className="score-value">{interview.scores.overall.toFixed(1)}</span>
+                    <span className="score-value" data-score={interview.scores.overall.toFixed(1)}>
+                      {interview.scores.overall.toFixed(1)}
+                    </span>
                   </div>
                   <div className="score-item">
                     <span className="score-label">Clarity</span>
-                    <span className="score-value">{interview.scores.clarity.toFixed(1)}</span>
+                    <span className="score-value" data-score={interview.scores.clarity.toFixed(1)}>
+                      {interview.scores.clarity.toFixed(1)}
+                    </span>
                   </div>
                   <div className="score-item">
                     <span className="score-label">Accuracy</span>
-                    <span className="score-value">{interview.scores.accuracy.toFixed(1)}</span>
+                    <span className="score-value" data-score={interview.scores.accuracy.toFixed(1)}>
+                      {interview.scores.accuracy.toFixed(1)}
+                    </span>
                   </div>
                   <div className="score-item">
                     <span className="score-label">Depth</span>
-                    <span className="score-value">{interview.scores.depth.toFixed(1)}</span>
+                    <span className="score-value" data-score={interview.scores.depth.toFixed(1)}>
+                      {interview.scores.depth.toFixed(1)}
+                    </span>
                   </div>
                 </div>
                 <div className="history-progress">
