@@ -18,7 +18,7 @@ console.log('API Key:', process.env.OPENROUTER_API_KEY ? 'Loaded' : 'MISSING');
 async function test() {
   try {
     const completion = await openai.chat.completions.create({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'google/gemini-2.0-flash-exp:free',
       messages: [
         { role: 'user', content: 'Say hello!' }
       ],

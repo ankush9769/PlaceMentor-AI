@@ -230,7 +230,7 @@ app.post('/api/generate-questions', async (req, res) => {
 }`;
 
     const completion = await openai.chat.completions.create({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'google/gemini-2.0-flash-exp:free',
       messages: [
         {
           role: 'user',
@@ -372,7 +372,7 @@ Provide specific feedback for each criterion and overall tips for improvement. R
 }`;
 
     const completion = await openai.chat.completions.create({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'google/gemini-2.0-flash-exp:free',
       messages: [
         {
           role: 'user',
@@ -748,7 +748,7 @@ Be helpful, concise, and encouraging. Format your responses clearly with bullet 
     ];
 
     const completion = await openai.chat.completions.create({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'google/gemini-2.0-flash-exp:free',
       messages,
       temperature: 0.7,
       max_tokens: 500
@@ -965,7 +965,7 @@ Focus your analysis on:
 - Completeness of essential sections`;
 
     const completion = await openai.chat.completions.create({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'google/gemini-2.0-flash-exp:free',
       messages: [
         {
           role: 'user',

@@ -59,7 +59,7 @@ Return ONLY a valid JSON object in this exact format (no other text):
 
     // Call OpenRouter API
     const completion = await openai.chat.completions.create({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'google/gemini-2.0-flash-exp:free',
       messages: [
         {
           role: 'system',
