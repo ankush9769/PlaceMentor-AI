@@ -40,9 +40,6 @@ const ResultsSummary = ({ questions, answers, onRestart }) => {
   return (
     <div className="results-container">
       <div className="results-card">
-        <button onClick={onRestart} className="back-button-results">
-          ← Back to Dashboard
-        </button>
         <h1 className="results-title">Interview Complete! 🎉</h1>
         
         <div className="overall-score">

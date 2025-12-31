@@ -73,34 +73,42 @@ const Profile = ({ user, onBack, onUpdateProfile }) => {
 
   return (
     <div className="profile-container">
-      <div className="profile-card">
-        <button onClick={onBack} className="back-button-profile">
-          ← Back to Dashboard
-        </button>
-
-        <div className="profile-header">
-          <div className="profile-avatar">
-            <span className="avatar-icon">👤</span>
-          </div>
-          <h1 className="profile-title">My Profile</h1>
-          <p className="profile-subtitle">Manage your account information</p>
+      <div className="profile-header-section">
+        <div className="profile-avatar">
+          <span className="avatar-icon">👤</span>
+          <div className="avatar-badge">Pro</div>
         </div>
+        <div className="profile-info">
+          <h1 className="profile-name">{user.name}</h1>
+          <p className="profile-email">{user.email}</p>
+          <span className="profile-status">
+            <span className="status-indicator"></span>
+            Active Account
+          </span>
+        </div>
+      </div>
 
-        {error && (
-          <div className="message error-message">
-            {error}
-          </div>
-        )}
+      {error && (
+        <div className="message error-message">
+          <span className="message-icon">❌</span>
+          {error}
+        </div>
+      )}
 
-        {success && (
-          <div className="message success-message">
-            {success}
-          </div>
-        )}
+      {success && (
+        <div className="message success-message">
+          <span className="message-icon">✅</span>
+          {success}
+        </div>
+      )}
 
+      <div className="profile-content">
         <form onSubmit={handleSubmit} className="profile-form">
           <div className="form-section">
-            <h2 className="section-title">Personal Information</h2>
+            <div className="section-header">
+              <h2 className="section-title">Personal Information</h2>
+              <p className="section-description">Update your personal details and contact information</p>
+            </div>
 
             <div className="form-group">
               <label htmlFor="name" className="form-label">
@@ -156,21 +164,38 @@ const Profile = ({ user, onBack, onUpdateProfile }) => {
           </div>
 
           <div className="form-section">
-            <h2 className="section-title">Account Statistics</h2>
+            <div className="section-header">
+              <h2 className="section-title">Account Overview</h2>
+              <p className="section-description">Your account activity and membership details</p>
+            </div>
             
-            <div className="stats-row">
-              <div className="stat-item">
-                <span className="stat-label">Member Since</span>
-                <span className="stat-value">
-                  {new Date(user.createdAt || Date.now()).toLocaleDateString('en-US', {
-                    month: 'long',
-                    year: 'numeric'
-                  })}
-                </span>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-icon">📅</div>
+                <div className="stat-content">
+                  <span className="stat-label">Member Since</span>
+                  <span className="stat-value">
+                    {new Date(user.createdAt || Date.now()).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </span>
+                </div>
               </div>
-              <div className="stat-item">
-                <span className="stat-label">Account Status</span>
-                <span className="stat-value status-active">Active</span>
+              <div className="stat-card">
+                <div className="stat-icon">⚡</div>
+                <div className="stat-content">
+                  <span className="stat-label">Account Type</span>
+                  <span className="stat-value">Premium</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">🔒</div>
+                <div className="stat-content">
+                  <span className="stat-label">Security</span>
+                  <span className="stat-value status-secure">Verified</span>
+                </div>
               </div>
             </div>
           </div>
@@ -180,26 +205,28 @@ const Profile = ({ user, onBack, onUpdateProfile }) => {
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="btn btn-primary"
+                className="btn btn-edit"
               >
-                ✏️ Edit Profile
+                <span className="btn-icon">✏️</span>
+                Edit Profile
               </button>
             ) : (
               <>
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="btn btn-secondary"
+                  className="btn btn-cancel"
                   disabled={isLoading}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn btn-save"
                   disabled={isLoading}
                 >
-                  {isLoading ? 'Saving...' : '💾 Save Changes'}
+                  <span className="btn-icon">{isLoading ? '⏳' : '💾'}</span>
+                  {isLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </>
             )}

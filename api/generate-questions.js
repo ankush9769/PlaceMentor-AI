@@ -1,54 +1,5 @@
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  defaultHeaders: {
-    'HTTP-Referer': 'https://prep-master-ai.vercel.app',
-    'X-Title': 'AI Interview Simulator',
-  },
-});
-
-// Fallback models for rate limiting
-const FALLBACK_MODELS = [
-  'google/gemini-2.0-flash-exp:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'microsoft/phi-3-mini-128k-instruct:free',
-  'huggingface/zephyr-7b-beta:free',
-  'openchat/openchat-7b:free'
-];
-
-async function tryModelsWithFallback(messages, options = {}) {
-  let lastError = null;
-  
-  for (const model of FALLBACK_MODELS) {
-    try {
-      console.log(`🤖 Trying model: ${model}`);
-      
-      const completion = await openai.chat.completions.create({
-        model,
-        messages,
-        ...options
-      });
-
-      const response = completion.choices[0]?.message?.content;
-      if (response) {
-        console.log(`✅ Success with model: ${model}`);
-        return response;
-      }
-    } catch (error) {
-      console.log(`❌ Model ${model} failed:`, error.message);
-      lastError = error;
-      
-      if (error.status !== 429) {
-        // If it's not a rate limit, continue to next model
-        continue;
-      }
-    }
-  }
-  
-  throw lastError || new Error('All models failed');
-}
+import { chatCompletion } from './lib/ai-providers.js';
+import { questionCache } from './lib/cache.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -69,6 +20,14 @@ export default async function handler(req, res) {
         message: 'Missing required fields: techStack and level',
         retryable: false
       });
+    }
+
+    // Check cache first
+    const cacheKey = questionCache.generateKey(techStack, level);
+    const cachedQuestions = questionCache.get(cacheKey);
+    if (cachedQuestions) {
+      console.log('📦 Returning cached questions for:', techStack, level);
+      return res.status(200).json({ questions: cachedQuestions, cached: true });
     }
 
     // Check if mock mode is enabled
@@ -98,7 +57,7 @@ Return ONLY a valid JSON object in this exact format (no other text):
   ]
 }`;
 
-    // Call OpenRouter API with fallback
+    // Call AI API with universal provider
     const messages = [
       {
         role: 'system',
@@ -110,7 +69,7 @@ Return ONLY a valid JSON object in this exact format (no other text):
       }
     ];
 
-    const responseText = await tryModelsWithFallback(messages, {
+    let responseText = await chatCompletion(messages, {
       temperature: 0.7
     });
 
@@ -118,8 +77,14 @@ Return ONLY a valid JSON object in this exact format (no other text):
       throw new Error('No response from OpenAI');
     }
 
-    // Remove markdown code blocks if present
-    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    // Remove markdown code blocks and special tokens if present
+    responseText = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .replace(/^<s>\s*/g, '')  // Remove <s> token at start
+      .replace(/\s*<\/s>$/g, '') // Remove </s> token at end
+      .replace(/^\[INST\].*?\[\/INST\]/g, '') // Remove instruction tokens
+      .trim();
 
     // Parse the response
     const parsed = JSON.parse(responseText);
@@ -127,8 +92,11 @@ Return ONLY a valid JSON object in this exact format (no other text):
 
     // Ensure we have exactly 5 questions
     if (!Array.isArray(questions) || questions.length !== 5) {
-      throw new Error('Invalid response format from OpenAI');
+      throw new Error('Invalid response format from AI');
     }
+
+    // Cache the questions
+    questionCache.set(cacheKey, questions);
 
     // Return questions
     return res.status(200).json({ questions });

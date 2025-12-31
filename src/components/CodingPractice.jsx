@@ -207,9 +207,6 @@ const CodingPractice = ({ onBack }) => {
   if (!selectedLanguage) {
     return (
       <div className="coding-practice-container">
-        <button onClick={onBack} className="back-button nav-back-button">
-          ← Back to Dashboard
-        </button>
         <div className="coding-practice-header">
           <h1 className="coding-title">💻 Coding Practice</h1>
           <p className="coding-subtitle">Select a programming language to start coding</p>
@@ -235,9 +232,6 @@ const CodingPractice = ({ onBack }) => {
   // Code editor screen
   return (
     <div className="coding-practice-container">
-      <button onClick={onBack} className="back-button nav-back-button">
-        ← Back to Dashboard
-      </button>
       <div className="coding-practice-header">
         <div className="header-buttons">
           <button onClick={() => setSelectedLanguage(null)} className="back-button change-lang-btn">

@@ -11,6 +11,7 @@ import CodingPractice from './components/CodingPractice';
 import AptitudeTest from './components/AptitudeTest';
 import Chatbot from './components/Chatbot';
 import ResumeAnalysis from './components/ResumeAnalysis';
+import Analytics from './components/Analytics';
 
 function App() {
   const [currentView, setCurrentView] = useState('signin');
@@ -30,20 +31,20 @@ function App() {
     if (storedToken && storedUser) {
       setToken(storedToken);
       setUser(JSON.parse(storedUser));
-      setCurrentView('dashboard');
+      setCurrentView('analytics');
     }
   }, []);
 
   const handleSignIn = (newToken, newUser) => {
     setToken(newToken);
     setUser(newUser);
-    setCurrentView('dashboard');
+    setCurrentView('analytics');
   };
 
   const handleSignUp = (newToken, newUser) => {
     setToken(newToken);
     setUser(newUser);
-    setCurrentView('dashboard');
+    setCurrentView('analytics');
   };
 
   const handleLogout = () => {
@@ -182,6 +183,7 @@ function App() {
           onStartInterview={() => setCurrentView('config')}
           onLogout={handleLogout}
           onViewInterview={handleViewInterview}
+          onNavigate={handleNavigate}
         />
       )}
 
@@ -232,6 +234,10 @@ function App() {
 
       {currentView === 'chatbot' && isAuthenticated && (
         <Chatbot onBack={() => setCurrentView('dashboard')} user={user} />
+      )}
+
+      {currentView === 'analytics' && isAuthenticated && (
+        <Analytics onBack={() => setCurrentView('dashboard')} user={user} />
       )}
     </div>
   );

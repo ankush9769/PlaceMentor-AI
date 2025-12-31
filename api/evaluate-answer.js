@@ -1,13 +1,5 @@
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  defaultHeaders: {
-    'HTTP-Referer': 'https://prep-master-ai.vercel.app',
-    'X-Title': 'AI Interview Simulator',
-  },
-});
+import { chatCompletion } from './lib/ai-providers.js';
+import { evaluationCache } from './lib/cache.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -28,6 +20,14 @@ export default async function handler(req, res) {
         message: 'Missing required fields: question, answer, techStack, and level',
         retryable: false
       });
+    }
+
+    // Check cache first (cache based on question + answer)
+    const cacheKey = evaluationCache.generateKey(question, answer, techStack, level);
+    const cachedEvaluation = evaluationCache.get(cacheKey);
+    if (cachedEvaluation) {
+      console.log('📦 Returning cached evaluation');
+      return res.status(200).json({ ...cachedEvaluation, cached: true });
     }
 
     // Check if mock mode is enabled
@@ -71,30 +71,34 @@ Provide specific feedback for each criterion and overall tips for improvement. R
   "overallTips": "overall improvement suggestions here"
 }`;
 
-    // Call OpenRouter API
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert technical interviewer providing constructive feedback. Be fair but thorough in your evaluation. Scores should be: 1=Poor, 2=Below Average, 3=Average, 4=Good, 5=Excellent. Return only valid JSON, no markdown formatting.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
+    // Call AI API with universal provider
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert technical interviewer providing constructive feedback. Be fair but thorough in your evaluation. Scores should be: 1=Poor, 2=Below Average, 3=Average, 4=Good, 5=Excellent. Return only valid JSON, no markdown formatting.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
+
+    let responseText = await chatCompletion(messages, {
       temperature: 0.3
     });
-
-    let responseText = completion.choices[0]?.message?.content;
 
     if (!responseText) {
       throw new Error('No response from OpenAI');
     }
 
-    // Remove markdown code blocks if present
-    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    // Remove markdown code blocks and special tokens if present
+    responseText = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .replace(/^<s>\s*/g, '')  // Remove <s> token at start
+      .replace(/\s*<\/s>$/g, '') // Remove </s> token at end
+      .replace(/^\[INST\].*?\[\/INST\]/g, '') // Remove instruction tokens
+      .trim();
 
     // Parse the response
     const evaluation = JSON.parse(responseText);
@@ -109,6 +113,9 @@ Provide specific feedback for each criterion and overall tips for improvement. R
     if (clarity < 1 || clarity > 5 || accuracy < 1 || accuracy > 5 || depth < 1 || depth > 5) {
       throw new Error('Invalid score values from OpenAI');
     }
+
+    // Cache the evaluation
+    evaluationCache.set(cacheKey, evaluation);
 
     // Return evaluation
     return res.status(200).json(evaluation);

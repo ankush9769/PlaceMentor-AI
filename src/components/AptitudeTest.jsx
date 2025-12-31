@@ -214,9 +214,6 @@ const AptitudeTest = ({ onBack, user }) => {
   if (!selectedTopic) {
     return (
       <div className="aptitude-container">
-        <button onClick={onBack} className="back-button nav-back-button">
-          ← Back to Dashboard
-        </button>
         <div className="aptitude-header">
           <h1 className="aptitude-title">🎯 Aptitude Test</h1>
           <p className="aptitude-subtitle">Master quantitative aptitude with practice questions</p>

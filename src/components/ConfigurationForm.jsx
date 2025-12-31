@@ -45,11 +45,6 @@ const ConfigurationForm = ({ onStartInterview, onBack }) => {
 
   return (
     <div className="config-container">
-      {onBack && (
-        <button type="button" onClick={onBack} className="back-button">
-          ← Back to Dashboard
-        </button>
-      )}
       <div className="config-card">
         <h1>AI Interview Simulator</h1>
         <p className="subtitle">Practice your technical interview skills with AI-powered feedback</p>

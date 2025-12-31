@@ -5,7 +5,16 @@ if (!process.env.MONGODB_URI) {
 }
 
 const uri = process.env.MONGODB_URI;
-const options = {};
+const options = {
+  tls: true,
+  tlsAllowInvalidCertificates: false,
+  serverSelectionTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  retryWrites: true,
+  retryReads: true,
+  maxPoolSize: 10,
+  minPoolSize: 2
+};
 
 let client;
 let clientPromise;

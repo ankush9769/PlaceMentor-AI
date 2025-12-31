@@ -3,7 +3,7 @@ import '../styles/components/Navbar.css';
 
 const Navbar = ({ currentView, onNavigate, onLogout, user }) => {
   const navItems = [
-    { id: 'dashboard', label: 'Performance Dashboard', icon: '📊' },
+    { id: 'analytics', label: 'Perfomance Analytics', icon: '📈' },
     { id: 'interview', label: 'AI Mock Interview', icon: '🎤' },
     { id: 'resume', label: 'Resume Analysis', icon: '📄' },
     { id: 'coding', label: 'Coding Practice', icon: '💻' },

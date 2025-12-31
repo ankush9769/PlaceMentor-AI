@@ -1,7 +1,7 @@
 .interview-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  padding: 40px 20px;
   display: flex;
   flex-direction: column;
 }
@@ -36,10 +36,11 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 30px;
-  padding: 20px;
-  background: #0f3460;
-  border-radius: 15px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  padding: 25px 30px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e8ecef;
 }
 
 .interview-info {
@@ -56,13 +57,15 @@
 }
 
 .tech-badge {
-  background: #e94560;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #ffffff;
+  box-shadow: 0 2px 12px rgba(102, 126, 234, 0.25);
 }
 
 .level-badge {
-  background: #64ffda;
-  color: #1a1a2e;
+  background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(0, 210, 255, 0.25);
 }
 
 .interview-main {
@@ -74,27 +77,29 @@
 }
 
 .transcript-area {
-  background: #0f3460;
-  border-radius: 15px;
-  padding: 20px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 25px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e8ecef;
   min-height: 120px;
 }
 
 .transcript-label {
-  color: #8892b0;
-  font-size: 0.9rem;
-  font-weight: 600;
+  color: #667eea;
+  font-size: 0.85rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 10px;
+  letter-spacing: 1.5px;
+  margin-bottom: 12px;
 }
 
 .transcript-text {
-  color: #ccd6f6;
+  color: #2d3748;
   font-size: 1.1rem;
-  line-height: 1.6;
+  line-height: 1.8;
   min-height: 60px;
+  font-weight: 400;
 }
 
 .error-banner {
@@ -107,10 +112,11 @@
 }
 
 .interview-controls {
-  background: #0f3460;
-  border-radius: 15px;
+  background: #ffffff;
+  border-radius: 16px;
   padding: 30px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e8ecef;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -137,14 +143,15 @@
 }
 
 .submit-btn {
-  background: #64ffda;
-  color: #1a1a2e;
+  background: #667eea;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: #52e0c2;
+  background: #5568d3;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(100, 255, 218, 0.3);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.35);
 }
 
 .submit-btn:disabled {
@@ -153,25 +160,27 @@
 }
 
 .retry-btn {
-  background: #ffa500;
+  background: #f59e0b;
   color: #ffffff;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
 }
 
 .retry-btn:hover {
-  background: #ff8c00;
+  background: #d97706;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(255, 165, 0, 0.3);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
 }
 
 .next-btn {
-  background: #e94560;
+  background: #14b8a6;
   color: #ffffff;
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.25);
 }
 
 .next-btn:hover {
-  background: #d63651;
+  background: #0d9488;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(233, 69, 96, 0.3);
+  box-shadow: 0 6px 20px rgba(20, 184, 166, 0.35);
 }
 
 @media (max-width: 768px) {

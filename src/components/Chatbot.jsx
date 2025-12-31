@@ -129,9 +129,6 @@ const Chatbot = ({ onBack, user }) => {
 
     return (
         <div className="chatbot-container">
-            <button onClick={onBack} className="back-button nav-back-button">
-                ← Back to Dashboard
-            </button>
             <div className="chatbot-header">
                 <div className="chatbot-title">
                     <h1>🤖 AI Interview Assistant</h1>

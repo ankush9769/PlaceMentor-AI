@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import '../styles/components/Dashboard.css';
 
-const Dashboard = ({ user, onStartInterview, onLogout, onViewInterview }) => {
+const Dashboard = ({ user, onStartInterview, onLogout, onViewInterview, onNavigate }) => {
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -108,6 +108,13 @@ const Dashboard = ({ user, onStartInterview, onLogout, onViewInterview }) => {
       <button onClick={onStartInterview} className="start-new-btn">
         Start New Interview
       </button>
+
+      <div className="quick-actions">
+        <button onClick={() => onNavigate('analytics')} className="action-btn analytics-btn">
+          <span className="action-icon">📊</span>
+          <span className="action-text">View Analytics</span>
+        </button>
+      </div>
 
       <div className="history-section">
         <h2 className="history-title">Interview History</h2>

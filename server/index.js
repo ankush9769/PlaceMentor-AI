@@ -41,16 +41,38 @@ app.post('/api/test-resume', (req, res) => {
 
 // MongoDB connection
 let db;
-const mongoClient = new MongoClient(process.env.MONGODB_URI);
+const mongoOptions = {
+  tls: true,
+  tlsAllowInvalidCertificates: false,
+  serverSelectionTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  retryWrites: true,
+  retryReads: true,
+  maxPoolSize: 10,
+  minPoolSize: 2
+};
+const mongoClient = new MongoClient(process.env.MONGODB_URI, mongoOptions);
 
 async function connectDB() {
   try {
+    console.log('🔌 Attempting to connect to MongoDB...');
     await mongoClient.connect();
     db = mongoClient.db('ai-interview-simulator');
-    console.log('✅ Connected to MongoDB');
+    // Test the connection
+    await db.command({ ping: 1 });
+    console.log('✅ Connected to MongoDB successfully');
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
-    process.exit(1);
+    console.error('❌ MongoDB connection error:', error.message);
+    console.error('\n⚠️  Common fixes:');
+    console.error('   1. Check if your IP address is whitelisted in MongoDB Atlas');
+    console.error('   2. Verify MONGODB_URI in .env file');
+    console.error('   3. Ensure username/password are correct');
+    console.error('   4. Check network/firewall settings\n');
+    // Don't exit immediately - allow retry
+    setTimeout(() => {
+      console.log('🔄 Retrying connection...');
+      connectDB();
+    }, 5000);
   }
 }
 
@@ -333,7 +355,9 @@ app.post('/api/generate-questions', async (req, res) => {
       }
     ];
 
-    const responseText = await modelFallback.makeRequest(messages, {
+    // Use AI provider system (Groq/Google/OpenRouter)
+    const { chatCompletion } = await import('../api/lib/ai-providers.js');
+    const responseText = await chatCompletion(messages, {
       temperature: 0.7
     });
 
@@ -510,7 +534,9 @@ Provide specific feedback for each criterion and overall tips for improvement. R
       }
     ];
 
-    const responseText = await modelFallback.makeRequest(messages, {
+    // Use AI provider system (Groq/Google/OpenRouter)
+    const { chatCompletion } = await import('../api/lib/ai-providers.js');
+    const responseText = await chatCompletion(messages, {
       temperature: 0.3
     });
 
@@ -672,6 +698,206 @@ app.get('/api/interviews/:id', authenticateToken, async (req, res) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: 'Failed to load interview details'
+    });
+  }
+});
+
+// Analytics Endpoint
+app.get('/api/analytics', authenticateToken, async (req, res) => {
+  try {
+    const { range = 'all' } = req.query;
+    const interviewsCollection = db.collection('interviews');
+    
+    // Calculate date filter based on range
+    let dateFilter = {};
+    const now = new Date();
+    
+    if (range === 'week') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      dateFilter = { completedAt: { $gte: weekAgo } };
+    } else if (range === 'month') {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      dateFilter = { completedAt: { $gte: monthAgo } };
+    }
+
+    // Fetch user's interviews
+    const interviews = await interviewsCollection
+      .find({ userId: req.user.userId, ...dateFilter })
+      .sort({ completedAt: 1 })
+      .toArray();
+
+    if (interviews.length === 0) {
+      return res.json({
+        totalInterviews: 0,
+        averageScore: 0,
+        improvement: 0,
+        streak: 0,
+        categoryScores: { clarity: 0, accuracy: 0, depth: 0 },
+        techStackPerformance: [],
+        recommendations: [],
+        recentScores: []
+      });
+    }
+
+    // Calculate metrics
+    const totalInterviews = interviews.length;
+    
+    // Average scores
+    let totalClarity = 0, totalAccuracy = 0, totalDepth = 0, totalOverall = 0;
+    interviews.forEach(interview => {
+      totalClarity += interview.scores.clarity || 0;
+      totalAccuracy += interview.scores.accuracy || 0;
+      totalDepth += interview.scores.depth || 0;
+      totalOverall += interview.scores.overall || 0;
+    });
+    
+    const avgClarity = totalClarity / totalInterviews;
+    const avgAccuracy = totalAccuracy / totalInterviews;
+    const avgDepth = totalDepth / totalInterviews;
+    const avgScore = totalOverall / totalInterviews;
+
+    // Calculate improvement (compare first half vs second half)
+    const halfPoint = Math.floor(totalInterviews / 2);
+    if (halfPoint > 0) {
+      const firstHalfAvg = interviews.slice(0, halfPoint).reduce((sum, i) => sum + i.scores.overall, 0) / halfPoint;
+      const secondHalfAvg = interviews.slice(halfPoint).reduce((sum, i) => sum + i.scores.overall, 0) / (totalInterviews - halfPoint);
+      var improvement = ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100;
+    } else {
+      var improvement = 0;
+    }
+
+    // Calculate streak
+    let streak = 0;
+    const sortedInterviews = [...interviews].sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+    let currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+    
+    for (const interview of sortedInterviews) {
+      const interviewDate = new Date(interview.completedAt);
+      interviewDate.setHours(0, 0, 0, 0);
+      
+      const daysDiff = Math.floor((currentDate - interviewDate) / (1000 * 60 * 60 * 24));
+      
+      if (daysDiff === streak || (streak === 0 && daysDiff === 0)) {
+        streak++;
+        currentDate = interviewDate;
+      } else if (daysDiff > streak + 1) {
+        break;
+      }
+    }
+
+    // Tech stack performance
+    const techStackMap = {};
+    interviews.forEach(interview => {
+      const stack = interview.config.techStack;
+      if (!techStackMap[stack]) {
+        techStackMap[stack] = { total: 0, count: 0 };
+      }
+      techStackMap[stack].total += interview.scores.overall;
+      techStackMap[stack].count++;
+    });
+    
+    const techStackPerformance = Object.keys(techStackMap)
+      .map(stack => ({
+        stack,
+        avgScore: techStackMap[stack].total / techStackMap[stack].count,
+        count: techStackMap[stack].count
+      }))
+      .sort((a, b) => b.avgScore - a.avgScore);
+
+    // Generate recommendations
+    const recommendations = [];
+    
+    if (avgClarity < 3) {
+      recommendations.push({
+        icon: '🗣️',
+        title: 'Improve Communication Clarity',
+        description: 'Your answers could be more structured. Practice using the STAR method for clearer responses.'
+      });
+    }
+    
+    if (avgAccuracy < 3) {
+      recommendations.push({
+        icon: '🎯',
+        title: 'Deepen Technical Knowledge',
+        description: 'Focus on accuracy by reviewing core concepts in your target tech stack.'
+      });
+    }
+    
+    if (avgDepth < 3) {
+      recommendations.push({
+        icon: '📚',
+        title: 'Add More Depth',
+        description: 'Include real-world examples and edge cases to demonstrate deeper understanding.'
+      });
+    }
+    
+    if (improvement < 0) {
+      recommendations.push({
+        icon: '📈',
+        title: 'Stay Consistent',
+        description: 'Your recent performance has declined. Review your previous best answers for insights.'
+      });
+    }
+    
+    if (streak < 3) {
+      recommendations.push({
+        icon: '🔥',
+        title: 'Build a Practice Streak',
+        description: 'Regular practice is key. Try to complete at least one interview per day.'
+      });
+    }
+    
+    if (recommendations.length === 0) {
+      recommendations.push({
+        icon: '🎉',
+        title: 'Excellent Progress!',
+        description: 'You\'re doing great! Keep practicing to maintain your high performance.'
+      });
+    }
+
+    // Recent scores trend (last 10 interviews or grouped by date)
+    const recentScores = [];
+    const last10 = interviews.slice(-10);
+    
+    // Group by date
+    const scoresByDate = {};
+    last10.forEach(interview => {
+      const date = new Date(interview.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (!scoresByDate[date]) {
+        scoresByDate[date] = { total: 0, count: 0 };
+      }
+      scoresByDate[date].total += interview.scores.overall;
+      scoresByDate[date].count++;
+    });
+    
+    Object.keys(scoresByDate).forEach(date => {
+      recentScores.push({
+        date,
+        avgScore: scoresByDate[date].total / scoresByDate[date].count
+      });
+    });
+
+    res.json({
+      totalInterviews,
+      averageScore: avgScore,
+      improvement,
+      streak,
+      categoryScores: {
+        clarity: avgClarity,
+        accuracy: avgAccuracy,
+        depth: avgDepth
+      },
+      techStackPerformance,
+      recommendations,
+      recentScores
+    });
+    
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to load analytics'
     });
   }
 });
@@ -942,8 +1168,9 @@ Is there a particular topic you'd like to focus on for your interview preparatio
       return res.json({ reply: mockReply });
     }
 
-    // Use model fallback system
-    const reply = await modelFallback.makeRequest(messages, {
+    // Use AI provider system (Groq/Google/OpenRouter)
+    const { chatCompletion } = await import('../api/lib/ai-providers.js');
+    const reply = await chatCompletion(messages, {
       temperature: 0.7,
       max_tokens: 500
     });
@@ -1002,12 +1229,13 @@ const resumeUpload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/pdf',
+      'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF and DOCX files are allowed.'));
+      cb(new Error('Invalid file type. Only PDF, DOC, and DOCX files are allowed.'));
     }
   }
 });
@@ -1106,18 +1334,58 @@ JavaScript, React, Node.js, Python, SQL, Git, AWS`;
 });
 
 // Resume Analysis Endpoint (No authentication required)
-app.post('/api/resume/analyze', async (req, res) => {
+app.post('/api/resume/analyze', resumeUpload.single('resume'), async (req, res) => {
   console.log('📥 Resume analyze endpoint called');
-  console.log('📋 Request body:', req.body);
+  console.log('📋 File:', req.file?.originalname);
   try {
-    const { resumeText, targetRole, fileName } = req.body;
+    let resumeText = '';
+    let fileName = 'resume';
 
-    if (!resumeText) {
+    // Handle file upload
+    if (req.file) {
+      fileName = req.file.originalname;
+      const fileBuffer = req.file.buffer;
+      const mimeType = req.file.mimetype;
+
+      // Parse based on file type
+      if (mimeType === 'application/pdf') {
+        try {
+          const pdfParse = require('pdf-parse');
+          const pdfData = await pdfParse(fileBuffer);
+          resumeText = pdfData.text;
+        } catch (error) {
+          console.error('❌ PDF parsing error:', error.message);
+          return res.status(400).json({
+            error: 'PARSE_ERROR',
+            message: 'Failed to parse PDF file. Please ensure it is a valid PDF document.'
+          });
+        }
+      } else if (mimeType === 'application/msword' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        try {
+          const docxData = await mammoth.extractRawText({ buffer: fileBuffer });
+          resumeText = docxData.value;
+        } catch (error) {
+          console.error('❌ Word parsing error:', error.message);
+          return res.status(400).json({
+            error: 'PARSE_ERROR',
+            message: 'Failed to parse Word document. Please ensure it is a valid file.'
+          });
+        }
+      }
+    } else if (req.body.resumeText) {
+      // Fallback to text input
+      resumeText = req.body.resumeText;
+      fileName = req.body.fileName || 'resume';
+    }
+
+    if (!resumeText || resumeText.trim().length === 0) {
       return res.status(400).json({
         error: 'VALIDATION_ERROR',
-        message: 'Resume text is required'
+        message: 'Resume text is required or file is empty'
       });
     }
+
+    const { targetRole } = req.body;
 
     // Check if mock mode is enabled
     if (process.env.USE_MOCK_MODE === 'true') {
@@ -1191,7 +1459,7 @@ ${targetRole ? `Target Role: ${targetRole}` : ''}
 
 Provide your analysis in this EXACT JSON structure with NO extra text or markdown:
 {
-  "overallScore": <number between 1-10>,
+  "overallScore": <number between 1-10 representing overall quality>,
   "atsScore": <number between 1-10 for ATS compatibility>,
   "strengths": [<array of 3-5 specific strengths found in the resume>],
   "weaknesses": [<array of 3-5 specific areas that need improvement>],
@@ -1214,24 +1482,31 @@ Focus your analysis on:
 - Effective use of action verbs
 - Completeness of essential sections`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
-      messages: [
-        {
-          role: 'user',
-          content: 'You are an expert resume reviewer and career coach. Provide constructive, specific, and actionable feedback. Return ONLY valid JSON with no markdown formatting.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.5
+    // Use Groq AI provider
+    const { chatCompletion } = await import('../api/lib/ai-providers.js');
+    const responseText = await chatCompletion([
+      {
+        role: 'system',
+        content: 'You are an expert resume reviewer and career coach. Provide constructive, specific, and actionable feedback. Return ONLY valid JSON with no markdown formatting.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ], {
+      temperature: 0.5,
+      max_tokens: 1500
     });
 
-    let responseText = completion.choices[0]?.message?.content;
-    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const analysis = JSON.parse(responseText);
+    // Clean and parse response
+    let cleanedResponse = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .replace(/^<s>\s*/g, '')
+      .replace(/\s*<\/s>$/g, '')
+      .trim();
+    
+    const analysis = JSON.parse(cleanedResponse);
 
     // Save analysis to database
     const sessionId = getSessionId(req);
