@@ -214,6 +214,63 @@
   font-weight: 500;
 }
 
+/* Individual Topic Progress */
+.topic-progress {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.topic-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.progress-text {
+  color: #4a5568;
+  font-weight: 600;
+}
+
+.progress-percent {
+  color: #667eea;
+  font-weight: 700;
+}
+
+.topic-progress-bar {
+  height: 8px;
+  background: rgba(102, 126, 234, 0.15);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.topic-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+  transition: width 0.5s ease;
+}
+
+.topic-card.in-progress {
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.topic-card.in-progress:hover {
+  border-color: #667eea;
+}
+
+/* Progress Stats */
+.progress-stats {
+  text-align: center;
+  margin-top: 0.75rem;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
 /* Test Header */
 .test-header {
   margin-bottom: 1.5rem;

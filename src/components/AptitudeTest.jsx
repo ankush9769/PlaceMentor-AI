@@ -94,14 +94,34 @@ const AptitudeTest = ({ onBack, user }) => {
   const [questions, setQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [showResults, setShowResults] = useState(false);
-  const [completedTopics, setCompletedTopics] = useState([]);
+  const [topicProgress, setTopicProgress] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load completed topics from localStorage
+  // Load topic progress from localStorage
   useEffect(() => {
     const saved = localStorage.getItem(`aptitude_progress_${user?.id || 'guest'}`);
     if (saved) {
-      setCompletedTopics(JSON.parse(saved));
+      try {
+        const parsed = JSON.parse(saved);
+        // Handle old format (array) and convert to new format (object)
+        if (Array.isArray(parsed)) {
+          const converted = {};
+          parsed.forEach(topicId => {
+            converted[topicId] = { completed: 20, total: 20 };
+          });
+          setTopicProgress(converted);
+          // Save in new format
+          localStorage.setItem(
+            `aptitude_progress_${user?.id || 'guest'}`,
+            JSON.stringify(converted)
+          );
+        } else {
+          setTopicProgress(parsed);
+        }
+      } catch (e) {
+        console.error('Error loading progress:', e);
+        setTopicProgress({});
+      }
     }
   }, [user]);
 
@@ -175,15 +195,22 @@ const AptitudeTest = ({ onBack, user }) => {
       return acc + (userAnswers[q.id] === q.correctAnswer ? 1 : 0);
     }, 0);
 
-    // Mark topic as completed if score >= 60%
-    if (score >= questions.length * 0.6) {
-      const newCompleted = [...new Set([...completedTopics, selectedTopic.id])];
-      setCompletedTopics(newCompleted);
-      localStorage.setItem(
-        `aptitude_progress_${user?.id || 'guest'}`,
-        JSON.stringify(newCompleted)
-      );
-    }
+    // Update topic progress
+    const newProgress = {
+      ...topicProgress,
+      [selectedTopic.id]: {
+        completed: score,
+        total: questions.length,
+        lastAttempt: new Date().toISOString(),
+        bestScore: Math.max(score, topicProgress[selectedTopic.id]?.bestScore || 0)
+      }
+    };
+    
+    setTopicProgress(newProgress);
+    localStorage.setItem(
+      `aptitude_progress_${user?.id || 'guest'}`,
+      JSON.stringify(newProgress)
+    );
   };
 
   const handleRetry = () => {
@@ -207,7 +234,28 @@ const AptitudeTest = ({ onBack, user }) => {
   };
 
   const getProgressPercentage = () => {
-    return (completedTopics.length / APTITUDE_TOPICS.length) * 100;
+    const totalQuestions = APTITUDE_TOPICS.length * 20; // 20 questions per topic
+    const completedQuestions = Object.values(topicProgress).reduce(
+      (sum, progress) => sum + (progress.completed || 0),
+      0
+    );
+    return (completedQuestions / totalQuestions) * 100;
+  };
+
+  const getTopicProgress = (topicId) => {
+    const progress = topicProgress[topicId];
+    if (!progress) return { completed: 0, total: 20, percentage: 0 };
+    return {
+      completed: progress.completed || 0,
+      total: progress.total || 20,
+      percentage: ((progress.completed || 0) / (progress.total || 20)) * 100
+    };
+  };
+
+  const getTotalCompletedTopics = () => {
+    return Object.values(topicProgress).filter(
+      progress => progress.completed >= (progress.total * 0.6)
+    ).length;
   };
 
   // Topic selection screen
@@ -222,7 +270,7 @@ const AptitudeTest = ({ onBack, user }) => {
             <div className="progress-info">
               <span className="progress-label">Overall Progress</span>
               <span className="progress-value">
-                {completedTopics.length} / {APTITUDE_TOPICS.length} Topics Completed
+                {getTotalCompletedTopics()} / {APTITUDE_TOPICS.length} Topics Completed
               </span>
             </div>
             <div className="progress-bar">
@@ -231,16 +279,20 @@ const AptitudeTest = ({ onBack, user }) => {
                 style={{ width: `${getProgressPercentage()}%` }}
               ></div>
             </div>
+            <div className="progress-stats">
+              <span>{Math.round(getProgressPercentage())}% Complete</span>
+            </div>
           </div>
         </div>
 
         <div className="topics-grid">
           {APTITUDE_TOPICS.map((topic) => {
-            const isCompleted = completedTopics.includes(topic.id);
+            const progress = getTopicProgress(topic.id);
+            const isCompleted = progress.percentage >= 60;
             return (
               <div
                 key={topic.id}
-                className={`topic-card ${isCompleted ? 'completed' : ''}`}
+                className={`topic-card ${isCompleted ? 'completed' : ''} ${progress.completed > 0 ? 'in-progress' : ''}`}
                 onClick={() => handleTopicSelect(topic)}
               >
                 {isCompleted && (
@@ -257,6 +309,26 @@ const AptitudeTest = ({ onBack, user }) => {
                   </span>
                   <span className="question-count">20 Questions</span>
                 </div>
+                
+                {/* Individual Topic Progress Bar */}
+                {progress.completed > 0 && (
+                  <div className="topic-progress">
+                    <div className="topic-progress-info">
+                      <span className="progress-text">
+                        {progress.completed}/{progress.total} Correct
+                      </span>
+                      <span className="progress-percent">
+                        {Math.round(progress.percentage)}%
+                      </span>
+                    </div>
+                    <div className="topic-progress-bar">
+                      <div
+                        className="topic-progress-fill"
+                        style={{ width: `${progress.percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

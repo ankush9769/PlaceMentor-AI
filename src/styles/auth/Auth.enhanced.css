@@ -168,7 +168,42 @@
   text-align: center;
   font-weight: 600;
   backdrop-filter: blur(10px);
-  animation: shake 0.5s ease-in-out;
+  animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.success-message {
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 212, 255, 0.2) 100%);
+  border: 1px solid rgba(0, 255, 136, 0.4);
+  color: #00ff88;
+  padding: 1rem;
+  border-radius: 15px;
+  text-align: center;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.info-message {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(123, 47, 247, 0.2) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  color: #00d4ff;
+  padding: 1rem;
+  border-radius: 15px;
+  text-align: left;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+  animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes shake {
@@ -239,6 +274,17 @@
   margin-top: 2rem;
   color: #b8c5d6;
   font-size: 1rem;
+}
+
+.forgot-password-link {
+  text-align: right;
+  margin-top: -0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.forgot-password-link .auth-link {
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .auth-link {

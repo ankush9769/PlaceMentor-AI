@@ -24,6 +24,111 @@
   margin-bottom: 30px;
 }
 
+.violation-title {
+  color: #ef4444;
+}
+
+/* Violation Banner */
+.violation-banner {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-radius: 15px;
+  padding: 30px;
+  margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(239, 68, 68, 0.3);
+  animation: violationPulse 2s ease-in-out infinite;
+}
+
+@keyframes violationPulse {
+  0%, 100% {
+    box-shadow: 0 10px 30px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 10px 40px rgba(239, 68, 68, 0.5);
+  }
+}
+
+.violation-icon {
+  font-size: 64px;
+  line-height: 1;
+}
+
+.violation-content {
+  flex: 1;
+}
+
+.violation-heading {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.violation-reason {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.violation-message {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.violation-time {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.violation-explanation {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 4px solid #ef4444;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 30px;
+}
+
+.violation-explanation h3 {
+  color: #ef4444;
+  font-size: 1.2rem;
+  margin-bottom: 12px;
+}
+
+.violation-explanation p {
+  color: #ccd6f6;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.violation-explanation ul {
+  color: #a8b2d1;
+  margin-left: 20px;
+  margin-bottom: 12px;
+}
+
+.violation-explanation li {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.violation-explanation strong {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.violation-note {
+  background: rgba(251, 191, 36, 0.1);
+  border-left: 3px solid #f59e0b;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 16px;
+}
+
 .overall-score {
   background: linear-gradient(135deg, #e94560 0%, #d63651 100%);
   border-radius: 15px;
@@ -211,4 +316,178 @@
 
 .results-card {
   position: relative;
+}
+
+/* Emotion Analysis Styles */
+.emotion-analysis {
+  margin-bottom: 30px;
+  background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+  border-radius: 15px;
+  padding: 30px;
+  box-shadow: 0 10px 30px rgba(100, 255, 218, 0.1);
+}
+
+.emotion-title {
+  color: #64ffda;
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.emotion-summary {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 30px;
+}
+
+.dominant-emotion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(100, 255, 218, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  border: 2px solid rgba(100, 255, 218, 0.3);
+}
+
+.emotion-emoji {
+  font-size: 64px;
+  margin-bottom: 12px;
+}
+
+.emotion-text {
+  text-align: center;
+}
+
+.emotion-label {
+  color: #8892b0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.emotion-name {
+  color: #64ffda;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  margin-bottom: 4px;
+}
+
+.emotion-confidence {
+  color: #ccd6f6;
+  font-size: 0.9rem;
+}
+
+.emotion-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.breakdown-label {
+  color: #ccd6f6;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.breakdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.breakdown-emoji {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+}
+
+.breakdown-emotion {
+  color: #a8b2d1;
+  font-size: 0.9rem;
+  text-transform: capitalize;
+  min-width: 80px;
+}
+
+.breakdown-bar {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.breakdown-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #64ffda 0%, #5ce1c8 100%);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.breakdown-percent {
+  color: #64ffda;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 45px;
+  text-align: right;
+}
+
+/* Emotion chips in question review */
+.review-emotions {
+  color: #a8b2d1;
+  font-size: 0.9rem;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #0f3460;
+}
+
+.emotion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.emotion-chip {
+  background: rgba(100, 255, 218, 0.15);
+  color: #64ffda;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(100, 255, 218, 0.3);
+}
+
+/* Mobile responsiveness for emotion analysis */
+@media (max-width: 768px) {
+  .emotion-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .dominant-emotion {
+    padding: 15px;
+  }
+
+  .emotion-emoji {
+    font-size: 48px;
+  }
+
+  .emotion-name {
+    font-size: 1.2rem;
+  }
+
+  .breakdown-emotion {
+    min-width: 60px;
+    font-size: 0.85rem;
+  }
+
+  .breakdown-bar {
+    height: 6px;
+  }
 }

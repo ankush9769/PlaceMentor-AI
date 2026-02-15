@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import '../../styles/auth/Auth.enhanced.css';
 
-const SignIn = ({ onSignIn, onSwitchToSignUp }) => {
+const SignIn = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -92,6 +92,12 @@ const SignIn = ({ onSignIn, onSwitchToSignUp }) => {
               required
               className="form-input"
             />
+          </div>
+
+          <div className="forgot-password-link">
+            <span onClick={onSwitchToForgotPassword} className="auth-link">
+              Forgot Password?
+            </span>
           </div>
 
           <button

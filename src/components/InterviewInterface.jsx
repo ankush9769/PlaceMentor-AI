@@ -3,6 +3,7 @@ import Timer from './Timer';
 import MicrophoneButton from './MicrophoneButton';
 import QuestionDisplay from './QuestionDisplay';
 import EvaluationDisplay from './EvaluationDisplay';
+import FacialExpressionTracker from './FacialExpressionTracker';
 import '../styles/components/InterviewInterface.css';
 
 const InterviewInterface = ({ config, onComplete, onBack }) => {
@@ -17,6 +18,9 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
   const [currentEvaluation, setCurrentEvaluation] = useState(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [showRetry, setShowRetry] = useState(false);
+  const [emotionData, setEmotionData] = useState([]);
+  const [currentQuestionEmotions, setCurrentQuestionEmotions] = useState([]);
+  const [violationData, setViolationData] = useState(null);
 
   const audioRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -238,6 +242,24 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
     setIsListening(false);
   };
 
+  const handleEmotionDetected = (emotionSnapshot) => {
+    setCurrentQuestionEmotions((prev) => [...prev, emotionSnapshot]);
+    setEmotionData((prev) => [...prev, { ...emotionSnapshot, questionIndex: currentQuestionIndex }]);
+  };
+
+  const handleViolation = (violation) => {
+    console.error('🚨 Interview violation detected:', violation);
+    
+    // Store violation data
+    setViolationData(violation);
+    
+    // Stop listening if active
+    stopListening();
+    
+    // End interview immediately with violation flag
+    onComplete(answers, questions, emotionData, violation);
+  };
+
   const handleSubmitAnswer = async () => {
     if (!transcript.trim()) {
       setError('Please provide an answer before submitting.');
@@ -272,6 +294,7 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
         transcript,
         evaluation,
         attemptNumber: 1,
+        emotions: currentQuestionEmotions,
       };
 
       setAnswers((prev) => [...prev, newAnswer]);
@@ -288,6 +311,7 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
     setCurrentEvaluation(null);
     setShowRetry(false);
     setError(null);
+    setCurrentQuestionEmotions([]);
     // Remove the last answer
     setAnswers((prev) => prev.slice(0, -1));
     // Replay audio
@@ -301,13 +325,14 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
       setCurrentEvaluation(null);
       setShowRetry(false);
       setError(null);
+      setCurrentQuestionEmotions([]);
     } else {
-      onComplete(answers, questions);
+      onComplete(answers, questions, emotionData);
     }
   };
 
   const handleTimeExpire = () => {
-    onComplete(answers, questions);
+    onComplete(answers, questions, emotionData);
   };
 
   if (isLoading) {
@@ -337,6 +362,12 @@ const InterviewInterface = ({ config, onComplete, onBack }) => {
   return (
     <div className="interview-container">
       <audio ref={audioRef} onEnded={handleAudioEnded} style={{ display: 'none' }} />
+      
+      <FacialExpressionTracker
+        isActive={true}
+        onEmotionDetected={handleEmotionDetected}
+        onViolation={handleViolation}
+      />
       
       {onBack && (
         <button onClick={onBack} className="back-button-interview">

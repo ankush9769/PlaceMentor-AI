@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import '../styles/components/ResumeAnalysis.css';
+import '../styles/components/JobRecommendations.css';
 
 function ResumeAnalysis() {
   const [file, setFile] = useState(null);
@@ -11,6 +12,9 @@ function ResumeAnalysis() {
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [jobRecommendations, setJobRecommendations] = useState(null);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+  const [resumeText, setResumeText] = useState('');
   const fileInputRef = useRef(null);
 
   const validateFile = (selectedFile) => {
@@ -91,10 +95,20 @@ function ResumeAnalysis() {
         timeout: 60000,
       });
 
+      console.log('✅ Analysis response received:', response.data);
       setAnalysis(response.data);
+      
+      // Fetch job recommendations after successful analysis
+      if (response.data) {
+        console.log('🔍 Triggering job recommendations fetch...');
+        fetchJobRecommendations(response.data);
+      }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to analyze resume. Please try again.');
+      // Show detailed error message from server
+      const errorMessage = err.response?.data?.message || err.response?.data?.error || 'Failed to analyze resume. Please try again.';
+      setError(errorMessage);
       console.error('Analysis error:', err);
+      console.error('Error details:', err.response?.data);
     } finally {
       setIsAnalyzing(false);
     }
@@ -118,11 +132,53 @@ function ResumeAnalysis() {
     loadHistory();
   };
 
+  const fetchJobRecommendations = async (analysisData) => {
+    setIsLoadingJobs(true);
+    try {
+      console.log('Fetching job recommendations with analysis:', analysisData);
+      const response = await axios.post('http://localhost:3001/api/resume/job-recommendations', {
+        resumeText: resumeText || undefined, // Optional - send if available
+        analysis: {
+          keywords: analysisData.keywords || [],
+          strengths: analysisData.strengths || [],
+          weaknesses: analysisData.weaknesses || [],
+          overallScore: analysisData.overallScore,
+          atsScore: analysisData.atsScore
+        }
+      }, {
+        timeout: 30000 // 30 second timeout
+      });
+      console.log('Job recommendations response:', response.data);
+      
+      // Ensure the response has the expected structure
+      if (response.data && response.data.jobs) {
+        setJobRecommendations(response.data);
+      } else {
+        console.warn('Invalid job recommendations response structure:', response.data);
+      }
+    } catch (err) {
+      console.error('Error fetching job recommendations:', err);
+      console.error('Error response:', err.response?.data);
+      // Show error message to help debug
+      if (err.response?.data?.message) {
+        console.warn('Job recommendations error:', err.response.data.message);
+      }
+    } finally {
+      setIsLoadingJobs(false);
+    }
+  };
+
   const handleViewAnalysis = async (analysisId) => {
     try {
       const response = await axios.get(`http://localhost:3001/api/resume/analysis/${analysisId}`);
       setAnalysis(response.data.analysis);
+      setResumeText(response.data.resumeText);
       setShowHistory(false);
+      
+      // Fetch job recommendations for historical analysis
+      if (response.data.analysis) {
+        fetchJobRecommendations(response.data.analysis);
+      }
     } catch (err) {
       console.error('Error loading analysis:', err);
       setError('Failed to load analysis');
@@ -145,6 +201,8 @@ function ResumeAnalysis() {
     setAnalysis(null);
     setError('');
     setShowHistory(false);
+    setJobRecommendations(null);
+    setResumeText('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -341,6 +399,77 @@ function ResumeAnalysis() {
               </div>
             </div>
           )}
+
+          {/* Job Recommendations Section */}
+          <div className="job-recommendations-section">
+            <div className="card-header">
+              <span className="card-icon">💼</span>
+              <h4>Recommended Jobs for You</h4>
+            </div>
+            
+            {isLoadingJobs ? (
+              <div className="loading-jobs">
+                <div className="loading-spinner"></div>
+                <p>Finding perfect job matches...</p>
+              </div>
+            ) : jobRecommendations?.jobs && jobRecommendations.jobs.length > 0 ? (
+              <div className="jobs-grid">
+                {jobRecommendations.jobs.map((job, index) => (
+                  <div key={index} className="job-card">
+                    <div className="job-header">
+                      <div className="job-title-section">
+                        <h5 className="job-title">{job.title}</h5>
+                        <p className="job-company">{job.company}</p>
+                      </div>
+                      <div className="match-score">
+                        <div className="score-circle" style={{
+                          background: `conic-gradient(#00d4ff ${job.matchScore * 3.6}deg, rgba(255,255,255,0.1) 0deg)`
+                        }}>
+                          <div className="score-inner">
+                            {job.matchScore}%
+                          </div>
+                        </div>
+                        <span className="match-label">Match</span>
+                      </div>
+                    </div>
+                    
+                    <div className="job-details">
+                      <div className="job-info-row">
+                        <span className="info-icon">📍</span>
+                        <span className="info-text">{job.location}</span>
+                      </div>
+                      <div className="job-info-row">
+                        <span className="info-icon">💰</span>
+                        <span className="info-text">{job.estimatedSalary}</span>
+                      </div>
+                    </div>
+
+                    <div className="job-reasons">
+                      <p className="reasons-title">Why this matches:</p>
+                      <ul className="reasons-list">
+                        {job.reasons.map((reason, idx) => (
+                          <li key={idx}>{reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="job-skills">
+                      <p className="skills-title">Required Skills:</p>
+                      <div className="skills-tags">
+                        {job.requiredSkills.map((skill, idx) => (
+                          <span key={idx} className="skill-tag">{skill}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="no-jobs-message">
+                <p>Job recommendations will appear here after analysis</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

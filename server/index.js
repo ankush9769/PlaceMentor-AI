@@ -303,6 +303,131 @@ app.post('/api/auth/signin', async (req, res) => {
   }
 });
 
+// Forgot Password
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Email is required',
+        retryable: false
+      });
+    }
+
+    const usersCollection = db.collection('users');
+    const user = await usersCollection.findOne({ email: email.toLowerCase() });
+
+    // For security, don't reveal if user exists or not
+    if (!user) {
+      return res.status(200).json({
+        message: 'If an account exists with this email, a reset token will be sent.',
+        resetToken: null
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour from now
+
+    // Store reset token in database
+    await usersCollection.updateOne(
+      { email: email.toLowerCase() },
+      {
+        $set: {
+          resetToken,
+          resetTokenExpiry
+        }
+      }
+    );
+
+    // In production, send this token via email
+    // For development/demo purposes, we'll return it in the response
+    res.json({
+      message: 'Reset token generated successfully',
+      resetToken // Remove this in production after implementing email service
+    });
+
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to process request. Please try again.',
+      retryable: true
+    });
+  }
+});
+
+// Reset Password
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body;
+
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Email, token, and new password are required',
+        retryable: false
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Password must be at least 6 characters long',
+        retryable: false
+      });
+    }
+
+    const usersCollection = db.collection('users');
+
+    // Find user with valid reset token
+    const user = await usersCollection.findOne({
+      email: email.toLowerCase(),
+      resetToken: token,
+      resetTokenExpiry: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        error: 'INVALID_TOKEN',
+        message: 'Invalid or expired reset token',
+        retryable: false
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password and clear reset token
+    await usersCollection.updateOne(
+      { email: email.toLowerCase() },
+      {
+        $set: {
+          password: hashedPassword
+        },
+        $unset: {
+          resetToken: '',
+          resetTokenExpiry: ''
+        }
+      }
+    );
+
+    res.json({
+      message: 'Password reset successfully'
+    });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to reset password. Please try again.',
+      retryable: true
+    });
+  }
+});
+
 // Generate Questions
 app.post('/api/generate-questions', async (req, res) => {
   console.log('📥 Received request to /api/generate-questions');
@@ -1351,13 +1476,42 @@ app.post('/api/resume/analyze', resumeUpload.single('resume'), async (req, res) 
       if (mimeType === 'application/pdf') {
         try {
           const pdfParse = require('pdf-parse');
+          console.log('🔍 Attempting to parse PDF, buffer length:', fileBuffer.length);
+          console.log('🔍 PDF parse module type:', typeof pdfParse);
+          
           const pdfData = await pdfParse(fileBuffer);
+          console.log('✅ PDF parsed successfully, text length:', pdfData.text?.length || 0);
           resumeText = pdfData.text;
+          
+          // Check if we got any text
+          if (!resumeText || resumeText.trim().length === 0) {
+            console.warn('⚠️ PDF parsed but no text extracted');
+            return res.status(400).json({
+              error: 'EMPTY_PDF',
+              message: 'The PDF file appears to be empty or contains only images. Please ensure your resume contains readable text or try using a Word document (.docx) instead.'
+            });
+          }
         } catch (error) {
           console.error('❌ PDF parsing error:', error.message);
+          console.error('❌ Error name:', error.name);
+          console.error('❌ Error stack:', error.stack);
+          
+          // Provide specific error messages based on error type
+          let userMessage = 'Failed to parse PDF file. ';
+          if (error.message?.includes('Invalid PDF') || error.message?.includes('PDF header')) {
+            userMessage += 'The file appears to be corrupted or is not a valid PDF.';
+          } else if (error.message?.includes('encrypted') || error.message?.includes('password')) {
+            userMessage += 'The PDF is password-protected. Please remove the password and try again.';
+          } else if (error.message?.includes('XRef') || error.message?.includes('cross-reference')) {
+            userMessage += 'The PDF structure is damaged. Try re-saving the PDF or converting it to Word format.';
+          } else {
+            userMessage += 'Please try: 1) Converting to Word (.docx), 2) Re-saving the PDF, or 3) Using a simpler PDF format.';
+          }
+          
           return res.status(400).json({
             error: 'PARSE_ERROR',
-            message: 'Failed to parse PDF file. Please ensure it is a valid PDF document.'
+            message: userMessage,
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
           });
         }
       } else if (mimeType === 'application/msword' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -1623,6 +1777,184 @@ app.get('/api/resume/analysis/:id', async (req, res) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: 'Failed to load resume analysis details'
+    });
+  }
+});
+
+// Get Job Recommendations based on Resume (No authentication required)
+app.post('/api/resume/job-recommendations', async (req, res) => {
+  console.log('📥 Job recommendations endpoint called');
+  console.log('📋 Request body:', JSON.stringify(req.body, null, 2));
+  try {
+    const { resumeText, analysis } = req.body;
+
+    if (!analysis) {
+      console.error('❌ No analysis data provided');
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Analysis data is required'
+      });
+    }
+
+    // Extract key information with defaults
+    const skills = analysis.keywords || [];
+    const strengths = analysis.strengths || [];
+    const weaknesses = analysis.weaknesses || [];
+    
+    console.log('📊 Analysis data:', { 
+      skills: skills.length, 
+      strengths: strengths.length,
+      weaknesses: weaknesses.length 
+    });
+
+    // Check if mock mode is enabled
+    if (process.env.USE_MOCK_MODE === 'true') {
+      console.log('🎭 Mock mode enabled - returning sample job recommendations');
+      const mockRecommendations = {
+        jobs: [
+          {
+            title: "Full Stack Developer",
+            company: "Tech Corp",
+            matchScore: 92,
+            reasons: [
+              "Your React and Node.js experience aligns perfectly",
+              "5+ years experience matches job requirements",
+              "Strong background in API development"
+            ],
+            requiredSkills: ["React", "Node.js", "MongoDB", "REST APIs"],
+            location: "Remote",
+            estimatedSalary: "$90,000 - $130,000"
+          },
+          {
+            title: "Senior Frontend Developer",
+            company: "Innovation Labs",
+            matchScore: 88,
+            reasons: [
+              "Extensive React expertise highlighted in resume",
+              "UI/UX experience mentioned in projects",
+              "Leadership experience in previous roles"
+            ],
+            requiredSkills: ["React", "TypeScript", "CSS", "JavaScript"],
+            location: "Hybrid - New York",
+            estimatedSalary: "$95,000 - $140,000"
+          },
+          {
+            title: "JavaScript Engineer",
+            company: "Digital Solutions Inc",
+            matchScore: 85,
+            reasons: [
+              "Strong JavaScript fundamentals",
+              "Experience with modern frameworks",
+              "Good understanding of web technologies"
+            ],
+            requiredSkills: ["JavaScript", "HTML/CSS", "Git", "Agile"],
+            location: "Remote",
+            estimatedSalary: "$80,000 - $120,000"
+          },
+          {
+            title: "Backend Developer",
+            company: "Cloud Systems",
+            matchScore: 82,
+            reasons: [
+              "Node.js and database experience",
+              "API development skills",
+              "System architecture knowledge"
+            ],
+            requiredSkills: ["Node.js", "PostgreSQL", "Docker", "AWS"],
+            location: "On-site - San Francisco",
+            estimatedSalary: "$100,000 - $145,000"
+          },
+          {
+            title: "Technical Lead",
+            company: "StartupHub",
+            matchScore: 78,
+            reasons: [
+              "Leadership experience demonstrated",
+              "Full stack capabilities",
+              "Project management background"
+            ],
+            requiredSkills: ["React", "Node.js", "Team Leadership", "Architecture"],
+            location: "Hybrid - Austin",
+            estimatedSalary: "$110,000 - $160,000"
+          }
+        ]
+      };
+      return res.json(mockRecommendations);
+    }
+
+    const resumeContext = resumeText ? 
+      `Resume Content:\n${resumeText.substring(0, 3000)}\n\n` : 
+      `Resume Analysis Summary:\nStrengths: ${strengths.join(', ')}\nAreas for improvement: ${weaknesses.join(', ')}\n\n`;
+
+    const prompt = `Based on the following resume analysis, recommend 5 relevant job positions that match the candidate's skills and experience.
+
+${resumeContext}Key Skills Identified: ${skills.join(', ')}
+Key Strengths: ${strengths.join(', ')}
+
+Provide job recommendations in this EXACT JSON structure with NO extra text or markdown:
+{
+  "jobs": [
+    {
+      "title": "<job title>",
+      "company": "<realistic company name or type>",
+      "matchScore": <number between 70-95 representing match percentage>,
+      "reasons": [<array of 3 specific reasons why this job matches>],
+      "requiredSkills": [<array of 4-6 key skills needed>],
+      "location": "<work location type: Remote/Hybrid/On-site with city>",
+      "estimatedSalary": "<salary range in USD>"
+    }
+  ]
+}
+
+Requirements:
+- Recommend 5 jobs sorted by match score (highest first)
+- Match scores should range from 70-95%
+- Provide realistic job titles based on the candidate's skills and experience level
+- Include diverse company types (startups, enterprises, mid-size)
+- Vary location types (remote, hybrid, on-site)
+- Provide realistic salary ranges based on role and skills
+- Reasons should be specific to the candidate's skills and strengths`;
+
+    // Use Groq AI provider
+    const { chatCompletion } = await import('../api/lib/ai-providers.js');
+    const responseText = await chatCompletion([
+      {
+        role: 'system',
+        content: 'You are an expert recruiter and career advisor. Provide realistic, well-matched job recommendations based on resume content. Return ONLY valid JSON with no markdown formatting.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ], {
+      temperature: 0.7,
+      max_tokens: 2000
+    });
+
+    // Clean and parse response
+    let cleanedResponse = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .replace(/^<s>\s*/g, '')
+      .replace(/\s*<\/s>$/g, '')
+      .trim();
+    
+    console.log('📝 Cleaned AI response:', cleanedResponse.substring(0, 200) + '...');
+    
+    const recommendations = JSON.parse(cleanedResponse);
+    
+    console.log('✅ Successfully generated job recommendations:', recommendations.jobs?.length || 0, 'jobs');
+
+    res.json(recommendations);
+  } catch (error) {
+    console.error('========================================');
+    console.error('Job recommendations error:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('========================================');
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to generate job recommendations',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import SignIn from './components/Auth/SignIn';
 import SignUp from './components/Auth/SignUp';
+import ForgotPassword from './components/Auth/ForgotPassword';
 import Dashboard from './components/Dashboard';
 import ConfigurationForm from './components/ConfigurationForm';
 import InterviewInterface from './components/InterviewInterface';
@@ -20,6 +21,8 @@ function App() {
   const [interviewConfig, setInterviewConfig] = useState(null);
   const [completedAnswers, setCompletedAnswers] = useState([]);
   const [interviewQuestions, setInterviewQuestions] = useState([]);
+  const [emotionData, setEmotionData] = useState([]);
+  const [violationData, setViolationData] = useState(null);
   const [viewingInterviewId, setViewingInterviewId] = useState(null);
   const [isLoadingInterview, setIsLoadingInterview] = useState(false);
 
@@ -60,9 +63,11 @@ function App() {
     setCurrentView('interview');
   };
 
-  const handleCompleteInterview = async (answers, questions) => {
+  const handleCompleteInterview = async (answers, questions, emotionDataParam = [], violationParam = null) => {
     setCompletedAnswers(answers);
     setInterviewQuestions(questions);
+    setEmotionData(emotionDataParam);
+    setViolationData(violationParam);
 
     // Save interview to database
     if (token && interviewConfig) {
@@ -77,6 +82,8 @@ function App() {
             config: interviewConfig,
             questions,
             answers,
+            emotionData: emotionDataParam,
+            violation: violationParam,
             completedAt: new Date()
           })
         });
@@ -92,6 +99,8 @@ function App() {
     setInterviewConfig(null);
     setCompletedAnswers([]);
     setInterviewQuestions([]);
+    setEmotionData([]);
+    setViolationData(null);
     setViewingInterviewId(null);
     setCurrentView('dashboard');
   };
@@ -154,7 +163,7 @@ function App() {
   return (
     <div className="app">
       {/* Show navbar only when authenticated and not on auth pages */}
-      {isAuthenticated && currentView !== 'signin' && currentView !== 'signup' && (
+      {isAuthenticated && currentView !== 'signin' && currentView !== 'signup' && currentView !== 'forgotpassword' && (
         <Navbar
           currentView={currentView === 'config' || currentView === 'interview' || currentView === 'results' ? 'interview' : currentView}
           onNavigate={handleNavigate}
@@ -167,6 +176,7 @@ function App() {
         <SignIn
           onSignIn={handleSignIn}
           onSwitchToSignUp={() => setCurrentView('signup')}
+          onSwitchToForgotPassword={() => setCurrentView('forgotpassword')}
         />
       )}
 
@@ -174,6 +184,12 @@ function App() {
         <SignUp
           onSignUp={handleSignUp}
           onSwitchToSignIn={() => setCurrentView('signin')}
+        />
+      )}
+
+      {currentView === 'forgotpassword' && (
+        <ForgotPassword
+          onBackToSignIn={() => setCurrentView('signin')}
         />
       )}
 
@@ -197,7 +213,7 @@ function App() {
       {currentView === 'interview' && interviewConfig && (
         <InterviewInterface
           config={interviewConfig}
-          onComplete={(answers, questions) => handleCompleteInterview(answers, questions)}
+          onComplete={(answers, questions, emotionData, violation) => handleCompleteInterview(answers, questions, emotionData, violation)}
           onBack={() => setCurrentView('config')}
         />
       )}
@@ -206,6 +222,8 @@ function App() {
         <ResultsSummary
           questions={interviewQuestions}
           answers={completedAnswers}
+          emotionData={emotionData}
+          violation={violationData}
           onRestart={handleBackToDashboard}
         />
       )}
